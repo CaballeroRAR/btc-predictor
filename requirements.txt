@@ -1,0 +1,14 @@
+numpy
+pandas
+matplotlib
+yfinance
+scikit-learn
+tensorflow==2.16.1
+keras==3.12.1
+requests
+google-cloud-storage
+pytrends
+streamlit
+joblib
+plotly
+google-cloud-aiplatform
