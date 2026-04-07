@@ -10,10 +10,12 @@ def get_model_info():
     if not os.path.exists(cloud_config.MODEL_PATH):
         return None, None
     
-    # Get creation time (platform-dependent but usually reliable for local dev)
+    # Get creation time
     ctime = os.path.getctime(cloud_config.MODEL_PATH)
     dt_trained = datetime.fromtimestamp(ctime)
-    age_days = (datetime.now() - dt_trained).days
+    
+    # Date-based age (e.g., trained yesterday = 1 day old)
+    age_days = (datetime.now().date() - dt_trained.date()).days
     
     return age_days, dt_trained
 

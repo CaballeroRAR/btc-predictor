@@ -9,17 +9,18 @@ from google.cloud import storage
 import io
 import cloud_config as cloud_config
 
-def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
+def fetch_btc_data(years=cloud_config.YEARS_HISTORY, start_date=None):
     """Fetch historical BTC, ETH, Gold, and Oil data for ratio analysis."""
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=years * 365)
+    if start_date is None:
+        start_date = end_date - timedelta(days=years * 365)
     
-    print(f"Fetching BTC, ETH, Gold, DXY, and US10Y price data since {start_date.date()}...")
-    btc = yf.download("BTC-USD", start=start_date, interval="1d")
-    eth = yf.download("ETH-USD", start=start_date, interval="1d")
-    gold = yf.download("GC=F", start=start_date, interval="1d")
-    dxy = yf.download("DX-Y.NYB", start=start_date, interval="1d")
-    us10y = yf.download("^TNX", start=start_date, interval="1d")
+    print(f"Fetching price data from {start_date.date()} to {end_date.date()}...")
+    btc = yf.download("BTC-USD", start=start_date, end=end_date, interval="1d", progress=False)
+    eth = yf.download("ETH-USD", start=start_date, end=end_date, interval="1d", progress=False)
+    gold = yf.download("GC=F", start=start_date, end=end_date, interval="1d", progress=False)
+    dxy = yf.download("DX-Y.NYB", start=start_date, end=end_date, interval="1d", progress=False)
+    us10y = yf.download("^TNX", start=start_date, end=end_date, interval="1d", progress=False)
     
     # Handle yfinance MultiIndex columns if present
     def extract_level(df):
@@ -57,23 +58,6 @@ def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
     
     return df
 
-def fetch_google_trends(keyword="Bitcoin", years=cloud_config.YEARS_HISTORY):
-    """Fetch Google Trends interest over time."""
-    print(f"Fetching Google Trends for '{keyword}'...")
-    pytrends = TrendReq(hl='en-US', tz=360)
-    
-    try:
-        pytrends.build_payload([keyword], cat=0, timeframe='today 5-y', gprop='') # 5-y is max for daily-ish
-        df = pytrends.interest_over_time()
-        
-        if not df.empty:
-            df = df[[keyword]].rename(columns={keyword: 'Google_Trends'})
-            return df
-    except Exception as e:
-        print(f"Failed to fetch Google Trends (Rate Limit): {e}")
-        
-    return pd.DataFrame()
-
 def fetch_sentiment_data():
     """Fetch historical Crypto Fear & Greed Index data."""
     print("Fetching Crypto Fear & Greed Index data...")
@@ -90,31 +74,73 @@ def fetch_sentiment_data():
     else:
         raise Exception("Failed to fetch sentiment data")
 
-def prepare_merged_dataset():
-    """Merge price, sentiment, and trends data."""
-    price_df = fetch_btc_data()
-    sentiment_df = fetch_sentiment_data()
-    trends_df = fetch_google_trends()
+def prepare_merged_dataset(force_refresh=False):
+    """Merge price, sentiment, and trends data with incremental updates."""
+    local_path = os.path.join(cloud_config.DATA_DIR, "merged_data.csv")
+    os.makedirs(cloud_config.DATA_DIR, exist_ok=True)
     
-    # Align indexes (Price data is the master timeline)
-    merged_df = price_df.join(sentiment_df, how='left')
+    existing_df = pd.DataFrame()
+    last_date = None
     
-    if not trends_df.empty:
-        # Trends usually need resampling/reindexing as they might be weekly
-        merged_df = merged_df.join(trends_df, how='left')
+    if not force_refresh and os.path.exists(local_path):
+        try:
+            existing_df = pd.read_csv(local_path, index_col='Date', parse_dates=True)
+            if not existing_df.empty:
+                last_date = existing_df.index.max()
+                print(f"Found existing data until {last_date.date()}.")
+        except Exception as e:
+            print(f"Error reading existing CSV: {e}")
+
+    # Determine startup range
+    if last_date is None:
+        years = cloud_config.YEARS_HISTORY
+        start_date = datetime.now() - timedelta(days=years * 365)
     else:
-        # Maintain 12-feature dimension when Google Trends is rate-limited
-        merged_df['Google_Trends'] = 50.0
+        # Fetch from the day after the last entry
+        start_date = last_date + timedelta(days=1)
+        
+    # (If last_date is yesterday/today, we skip yfinance/sentiment fetch)
+    if last_date is not None and start_date.date() >= datetime.now().date():
+        print("Data is already up to date.")
+        clean_df = existing_df.copy()
+        if len(clean_df) > 1:
+            clean_df = clean_df.iloc[:-1]
+        return existing_df, clean_df
+
+    print(f"Fetching incremental data since {start_date.date()}...")
     
-    # Forward fill missing sentiment/trends (as they update less frequently)
-    merged_df.ffill(inplace=True)
-    merged_df.dropna(inplace=True)
+    # 1. Fetch Price Delta
+    new_price_df = fetch_btc_data(start_date=start_date)
     
-    # Drop the live (incomplete) today candle to avoid prediction gap anomalies
-    merged_df = merged_df.iloc[:-1]
+    # 2. Fetch Sentiment Delta
+    all_sentiment_df = fetch_sentiment_data()
+    new_sentiment_df = all_sentiment_df[all_sentiment_df.index >= start_date]
     
-    print(f"Merged dataset shape: {merged_df.shape}")
-    return merged_df
+    # 3. Trends (Baseline for now)
+    new_merged_df = new_price_df.join(new_sentiment_df, how='left')
+    new_merged_df['Google_Trends'] = 50.0
+    
+    # Combine with existing
+    if not existing_df.empty:
+        full_df = pd.concat([existing_df, new_merged_df])
+        full_df = full_df[~full_df.index.duplicated(keep='last')].sort_index()
+    else:
+        full_df = new_merged_df
+    
+    full_df.ffill(inplace=True)
+    full_df.dropna(inplace=True)
+    
+    # Save the updated dataset locally (Full version)
+    full_df.to_csv(local_path)
+    
+    # Create a Cleaned Version for Model Training/Inference (Drop partial today)
+    clean_df = full_df.copy()
+    if len(clean_df) > 1:
+        clean_df = clean_df.iloc[:-1]
+    
+    print(f"Dataset updated. Full: {full_df.shape}, Clean: {clean_df.shape}")
+    
+    return full_df, clean_df
 
 def save_to_gcs(df, filename):
     """Upload dataframe to GCS bucket as CSV."""
@@ -128,25 +154,13 @@ def save_to_gcs(df, filename):
     print(f"Uploaded {filename} to gs://{cloud_config.BUCKET_NAME}")
 
 def create_sequences(scaled_data, lookback=cloud_config.LOOKBACK_DAYS, forecast=cloud_config.FORECAST_DAYS):
-    """
-    Create multi-step sequences for LSTM (Original 9-feature Raw Price logic).
-    """
+    """Create multi-step sequences for LSTM."""
     X, y = [], []
     for i in range(len(scaled_data) - lookback - forecast + 1):
-        # Input features: Scaled OHLCV + Sentiment + Trends + Ratios
         X.append(scaled_data[i : i + lookback])
-        
-        # Output: Next forecast days closing price (Target at index 3: Close)
         y.append(scaled_data[i + lookback : i + lookback + forecast, 3])
-        
     return np.array(X), np.array(y)
 
 if __name__ == "__main__":
-    df = prepare_merged_dataset()
-    print(df.tail())
-    # Ensure local directory exists
-    os.makedirs(cloud_config.DATA_DIR, exist_ok=True)
-    df.to_csv(os.path.join(cloud_config.DATA_DIR, "merged_data.csv"))
-    
-    # Uncomment when GCP credentials are active
-    # save_to_gcs(df, "merged_data.csv")
+    full_df, clean_df = prepare_merged_dataset()
+    print(full_df.tail())

@@ -15,14 +15,14 @@ def load_investments():
     except:
         return []
 
-def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, note=""):
+def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, original_withdrawal_date=None, note=""):
     """Append a new investment to the journal with forecast snapshot."""
     investments = load_investments()
     
     # Convert numpy arrays to lists for JSON serialization
-    fp = forecast_prices.tolist() if forecast_prices is not None else []
-    cp = calibrated_prices.tolist() if calibrated_prices is not None else []
-    sd = std.tolist() if std is not None else []
+    fp = forecast_prices.tolist() if hasattr(forecast_prices, "tolist") else (forecast_prices or [])
+    cp = calibrated_prices.tolist() if hasattr(calibrated_prices, "tolist") else (calibrated_prices or [])
+    sd = std.tolist() if hasattr(std, "tolist") else (std or [])
     fd = [str(d) for d in forecast_dates] if forecast_dates is not None else []
     
     new_inv = {
@@ -35,6 +35,7 @@ def save_investment(amount, date, price, forecast_prices=None, calibrated_prices
         "calibrated_prices": cp,
         "std": sd,
         "forecast_dates": fd,
+        "original_withdrawal_date": str(original_withdrawal_date) if original_withdrawal_date else None,
         "note": note,
         "timestamp": str(datetime.now())
     }
