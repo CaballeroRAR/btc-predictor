@@ -28,10 +28,9 @@ def calculate_daily_drift(model, scaler, input_data, actual_price, iterations=50
     
     for _ in range(iterations):
         with tf.GradientTape() as tape:
-            # Create a mask to add drift only to the sentiment column (Index 7)
-            # Sentiment is the 8th column (index 7)
+            # Sentiment is the 11th column (index 10 in our 12-feature pipeline)
             mask = np.zeros((1, cloud_config.LOOKBACK_DAYS, num_features))
-            mask[:, :, 7] = 1.0 
+            mask[:, :, 10] = 1.0 
             mask = tf.cast(mask, tf.float32)
             
             X_calib = X_orig + (drift * mask)
@@ -66,10 +65,10 @@ def batch_calibrate_sentiment(model, scaler, full_df, depth=30):
         drift_scaled = calculate_daily_drift(model, scaler, window, actual_price)
         
         # Convert drift back to 'Sentiment Points' (0-100 scale)
-        # Scaler transformation for Sentiment (Index 7):
+        # Scaler transformation for Sentiment (Index 10):
         # Result = (Raw - Min) / (Max - Min)
         # So Drif_Raw = Drift_Scaled * (Max - Min)
-        sentiment_range = scaler.data_range_[7]
+        sentiment_range = scaler.data_range_[10]
         drift_points = drift_scaled * sentiment_range
         
         market_aligned = actual_sentiment - drift_points # If model need -drift to match price, then market is 'aligned' with shifted sentiment

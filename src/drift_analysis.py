@@ -143,7 +143,11 @@ if model and scaler and not full_df.empty:
         if st.button("Run Simulation", use_container_width=True):
             with st.spinner("Calculating probability bands..."):
                 recent_data = full_df.tail(cloud_config.LOOKBACK_DAYS)
-                mean, std = predict_with_uncertainty(model, scaler, recent_data)
+                # Increased iterations for a smoother probability distribution
+                mean, std = predict_with_uncertainty(model, scaler, recent_data, iterations=50)
+                
+                # Tighten the bands: 0.5-Sigma (High-Confidence Channel)
+                tight_std = std * 0.5
                 
                 # Use PREVIOUSLY SAVED Calibration (Instant)
                 state = lifecycle.load_calibration_state()
@@ -161,7 +165,7 @@ if model and scaler and not full_df.empty:
                     'dates': forecast_dates,
                     'prices': mean,
                     'calibrated_prices': calibrated_prices,
-                    'std': std,
+                    'std': tight_std,
                     'target': entry_price * (1 + profit_target/100),
                     'target_pct': profit_target,
                     'backtest': backtest_series,

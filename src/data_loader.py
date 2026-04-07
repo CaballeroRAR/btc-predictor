@@ -14,9 +14,12 @@ def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=years * 365)
     
-    print(f"Fetching BTC and ETH price data since {start_date.date()}...")
+    print(f"Fetching BTC, ETH, Gold, DXY, and US10Y price data since {start_date.date()}...")
     btc = yf.download("BTC-USD", start=start_date, interval="1d")
     eth = yf.download("ETH-USD", start=start_date, interval="1d")
+    gold = yf.download("GC=F", start=start_date, interval="1d")
+    dxy = yf.download("DX-Y.NYB", start=start_date, interval="1d")
+    us10y = yf.download("^TNX", start=start_date, interval="1d")
     
     # Handle yfinance MultiIndex columns if present
     def extract_level(df):
@@ -26,11 +29,24 @@ def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
         
     btc = extract_level(btc)
     eth = extract_level(eth)
+    gold = extract_level(gold)
+    dxy = extract_level(dxy)
+    us10y = extract_level(us10y)
         
     df = btc[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
     
-    # Risk Proxy: BTC/ETH Ratio (High ratio = Flight to BTC/Safety)
+    # Macro assets skip weekends. We align to BTC's 24/7 calendar and ffill Friday's close.
+    gold_close = gold['Close'].reindex(btc.index).ffill()
+    dxy_close = dxy['Close'].reindex(btc.index).ffill()
+    us10y_close = us10y['Close'].reindex(btc.index).ffill()
+    
+    # Separate Risk Proxies
     df['BTC_ETH_Ratio'] = btc['Close'] / eth['Close']
+    df['BTC_Gold_Ratio'] = btc['Close'] / gold_close
+    
+    # Macro Gravity Features
+    df['DXY'] = dxy_close
+    df['US10Y'] = us10y_close
     
     # Technical Sentiment: RSI (14-day)
     delta = df['Close'].diff()
@@ -87,12 +103,15 @@ def prepare_merged_dataset():
         # Trends usually need resampling/reindexing as they might be weekly
         merged_df = merged_df.join(trends_df, how='left')
     else:
-        # Maintain 9-feature dimension when Google Trends is rate-limited
+        # Maintain 12-feature dimension when Google Trends is rate-limited
         merged_df['Google_Trends'] = 50.0
     
     # Forward fill missing sentiment/trends (as they update less frequently)
     merged_df.ffill(inplace=True)
     merged_df.dropna(inplace=True)
+    
+    # Drop the live (incomplete) today candle to avoid prediction gap anomalies
+    merged_df = merged_df.iloc[:-1]
     
     print(f"Merged dataset shape: {merged_df.shape}")
     return merged_df
