@@ -62,3 +62,37 @@ gcloud builds submit --config cloudbuild.app.yaml .
 # 2. Deploy to Cloud Run
 gcloud run deploy btc-dashboard --image=gcr.io/btc-predictor-492515/btc-dashboard --region=us-central1 --project=btc-predictor-492515 --memory=2Gi
 ```
+
+---
+
+## Technical Deep-Dive: Data Science & Engineering
+
+### 1. The Neural Architecture (Stacked LSTM)
+The core forecasting engine is a **Sequential Recurrent Neural Network (RNN)** using two stacked **Long Short-Term Memory (LSTM)** layers (64 units each).
+- **Temporal Memory**: LSTMs are used to capture long-range dependencies in market cycles (e.g., historical RSI rebounds vs. DXY trends).
+- **Dropout Regularization**: We apply a $0.2$ Dropout rate between layers. This is critical for **Inference Science**, as it enables our Monte Carlo uncertainty simulations.
+- **Activation & Optimizer**: We utilize **ReLU** for non-linearity and the **Adam** optimizer with a Mean Squared Error (MSE) loss function for regression stability.
+
+### 2. Feature Engineering: The "Macro Gravity" Schema (12 Features)
+We moved beyond simple price-action by integrating cross-asset proxies that mathematically influence Bitcoin's dollar-denominated value:
+| Feature | Logic / "Gravity" |
+| :--- | :--- |
+| **OHLCV (5)** | Standard market liquidity and price discovery. |
+| **BTC/ETH Ratio** | Risk-on/Risk-off proxy within the crypto ecosystem. |
+| **BTC/Gold Ratio** | "Digital Gold" vs. Physical Gold parity. |
+| **DXY (USD Index)** | Captures dollar-strength headwinds; inverse correlation to BTC. |
+| **US10Y Yields** | Opportunity cost of risk-off yielding assets; global macro headwind. |
+| **RSI (14-day)** | Momentum oscillator for overbought/oversold detection. |
+| **Sentiment** | Institutional/Retail fear & greed index (Fear & Greed API). |
+| **Google Trends** | Social interest and retail "hype" proxy. |
+
+### 3. Inference Science: Uncertainty & Calibration
+Unlike "black box" predictors, this system provides a probabilistic range:
+- **Monte Carlo Dropout (Uncertainty)**: During inference, we keep Dropout layers **active** (`training=True`) and run 50 simultaneous forecasts. The standard deviation of these outputs forms our high-confidence channels.
+- **Sentiment-Calibrated Drift**: A proprietary optimization layer. If the model is physically underperforming yesterday's price, we use **Gradient Descent** on the `Sentiment` input alone to find the "market-implied" sentiment drift. This recalibrates the green forecast line to match real-world market weight before projecting into the future.
+
+### 4. Cloud Infrastructure
+- **Vertex AI Custom Container**: Used for local/cloud training parity.
+- **Cloud Run (Dashboard)**: A serverless environment for the Streamlit UI.
+- **Auto-Sync Model Lifecycle**: On every "Cold Start," the dashboard verifies its local `.h5` model against the GCS bucket. If a newer model is detected in GCS, it automatically downloads and hot-swaps the weights in memory.
+
