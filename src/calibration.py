@@ -7,7 +7,20 @@ import cloud_config as cloud_config
 def calculate_daily_drift(model, scaler, input_data, actual_price, iterations=50, lr=0.01):
     """
     Find the sentiment drift (offset) that minimizes the error for yesterday's price.
-    Returns: The optimal sentiment offset (in scaled units).
+    
+    This function uses Gradient Descent specifically on the Sentiment input feature
+    to align the model's next-day prediction with the actual market closing price.
+    
+    Args:
+        model (keras.Model): The loaded LSTM prediction model.
+        scaler (MinMaxScaler): The fitted scaler used during training.
+        input_data (pd.DataFrame): The lookback window of market data.
+        actual_price (float): The actual market close price for the target date.
+        iterations (int): Number of optimization steps.
+        lr (float): Learning rate for the Adam optimizer.
+        
+    Returns:
+        float: The optimal sentiment offset in scaled units.
     """
     # 1. Prepare Input
     scaled_input = scaler.transform(input_data.values)

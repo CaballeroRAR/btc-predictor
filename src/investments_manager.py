@@ -6,17 +6,39 @@ from datetime import datetime
 INVESTMENTS_FILE = "data/investments.json"
 
 def load_investments():
-    """Load investments from JSON file."""
+    """
+    Load the investment journal from a local JSON file.
+    
+    Returns:
+        list: A list of investment dictionaries. Returns an empty list if file not found.
+    """
     if not os.path.exists(INVESTMENTS_FILE):
         return []
     try:
         with open(INVESTMENTS_FILE, 'r') as f:
             return json.load(f)
-    except:
+    except Exception:
         return []
 
 def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, original_withdrawal_date=None, note=""):
-    """Append a new investment to the journal with forecast snapshot."""
+    """
+    Append a new investment entry to the journal with a forecast snapshot.
+    
+    Args:
+        amount (float): Investment amount in USD.
+        date (str/datetime): Date of purchase.
+        price (float): BTC price at time of purchase.
+        forecast_prices (list/np.array): Raw model output array.
+        calibrated_prices (list/np.array): Drift-aligned model output array.
+        std (list/np.array): Standard deviation (uncertainty) bands.
+        forecast_dates (list): Dates corresponding to the forecast window.
+        profit_target (float): Multiplier for target withdrawal (e.g., 2.0 for 2x).
+        original_withdrawal_date (str/datetime): Initially projected exit date.
+        note (str): Optional user annotation.
+        
+    Returns:
+        dict: The newly created investment record.
+    """
     investments = load_investments()
     
     # Convert numpy arrays to lists for JSON serialization

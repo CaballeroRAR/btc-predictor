@@ -8,7 +8,6 @@ from pytrends.request import TrendReq
 from google.cloud import storage
 import io
 import cloud_config as cloud_config
-import time
 import feedparser
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -175,8 +174,6 @@ def prepare_merged_dataset(force_refresh=False):
     print(f"Dataset updated. Full: {full_df.shape}, Clean: {clean_df.shape}")
     
     return full_df, clean_df
-
-# Removed save_to_gcs (Deadcode - Deployment script handles sync via 'gcloud storage cp')
 
 def create_sequences(scaled_data, lookback=cloud_config.LOOKBACK_DAYS, forecast=cloud_config.FORECAST_DAYS):
     """Create multi-step sequences for LSTM."""
