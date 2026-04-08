@@ -71,13 +71,13 @@ def batch_calibrate_sentiment(model, scaler, full_df, depth=30):
         sentiment_range = scaler.data_range_[10]
         drift_points = drift_scaled * sentiment_range
         
-        market_aligned = actual_sentiment - drift_points # If model need -drift to match price, then market is 'aligned' with shifted sentiment
+        market_aligned = actual_sentiment + drift_points
         
         results.append({
             "Date": full_df.index[i],
             "Actual_Sentiment": actual_sentiment,
             "Market_Aligned": market_aligned,
-            "Drift": -drift_points # Negative drift means market is more optimistic than signal
+            "Drift": drift_points # Positive drift means market is more optimistic than signal
         })
         
     return pd.DataFrame(results).set_index("Date")

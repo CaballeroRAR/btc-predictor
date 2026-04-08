@@ -254,6 +254,13 @@ if model and scaler and not full_df.empty:
                 st.write("**Recent Error:** Run Simulation to evaluate")
             
             st.divider()
+            if st.button("Recalibrate Market Alignment", use_container_width=True):
+                for key in ['base_forecast', 'results']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.info("Recalibrating psychological drift...")
+                st.rerun()
+
             if st.button("Force Market Refresh", use_container_width=True):
                 st.cache_data.clear()
                 for key in ['base_forecast', 'results', 'plan_triggered']:
