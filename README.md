@@ -61,23 +61,20 @@ Our infrastructure has stabilized over standard GCP setups by solving these comp
 
 ## Deployment Workflow
 
-When you are ready to publish changes to GCP:
+The deployment process is now fully automated. Run the orchestration script to sync models, build containers, and deploy the dashboard in one step:
 
-### 1. Synchronize Model Weights
-Before building the dashboard, push your latest local training to GCS (Cloud Run fetches these on startup):
 ```powershell
-gcloud storage cp models/btc_lstm_model.h5 gs://btc-predictor-492515_cloudbuild/models/btc_lstm_model.h5
-gcloud storage cp models/scaler.pkl gs://btc-predictor-492515_cloudbuild/models/scaler.pkl
+.\automate_deployment.ps1
 ```
 
-### 2. Build and Deploy Dashboard
-```powershell
-# 1. Build the image
-gcloud builds submit --config cloudbuild.app.yaml .
+---
 
-# 2. Deploy to Cloud Run
-gcloud run deploy btc-dashboard --image=gcr.io/btc-predictor-492515/btc-dashboard --region=us-central1 --project=btc-predictor-492515 --memory=2Gi
-```
+### Phase 3: Cleanup & Standards
+The system has been sanitized for production:
+- **Feature Consistency**: Strict 12-feature architecture maintained across all layers.
+- **Backend Stability**: Keras 3 Monte Carlo loop stabilized with `tf.function`.
+- **Automated Calibration**: Market sentiment drift is calculated and applied before every forecast.
+- **Cache Management**: Local caches (`__pycache__`) are excluded from builds via updated `.gcloudignore`.
 
 ---
 

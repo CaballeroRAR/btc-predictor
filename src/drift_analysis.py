@@ -478,7 +478,7 @@ if model and scaler and not full_df.empty:
                                 except:
                                     pass
                         else:
-                            st.error("❌ Target no longer in 30-day window")
+                            st.error("Target no longer in 30-day window")
 
                         if st.button("Delete Record", key=inv['id']):
                             inv_mgr.delete_investment(inv['id'])
