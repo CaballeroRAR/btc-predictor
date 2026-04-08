@@ -21,7 +21,7 @@ def calculate_daily_drift(model, scaler, input_data, actual_price, iterations=50
     dummy[0, 3] = actual_price
     target_price_scaled = scaler.transform(dummy)[0, 3]
     
-    # 3. Optimization Variable: Drift for the Sentiment column (Index 7)
+    # 3. Optimization Variable: Drift for the Sentiment column (Index 10)
     drift = tf.Variable(0.0, trainable=True, dtype=tf.float32)
     
     optimizer = keras.optimizers.Adam(learning_rate=lr)

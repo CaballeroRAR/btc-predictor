@@ -118,7 +118,7 @@ def prepare_merged_dataset(force_refresh=False):
     
     # 3. Trends (Baseline for now)
     new_merged_df = new_price_df.join(new_sentiment_df, how='left')
-    new_merged_df['Google_Trends'] = 50.0
+    new_merged_df['Google_Trends'] = cloud_config.TRENDS_BASELINE
     
     # Combine with existing
     if not existing_df.empty:

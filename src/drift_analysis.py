@@ -79,12 +79,16 @@ def predict_with_uncertainty(model, scaler, current_data, iterations=20):
     
     # Perform multiple passes with dropout active
     preds_list = []
+    
+    # Keras 3 Stability: Wrap the functional call to maintain name_scope_stack
+    @tf.function(reduce_retracing=True)
+    def mc_step(X_batch):
+        return model(X_batch, training=True)
+
     for _ in range(iterations):
-        # calling model(X, training=True) keeps dropout layers active
-        preds_scaled = model(X, training=True)
+        preds_scaled = mc_step(X)
         
         # Inverse transform only the relevant closing price
-        # (Need to reshape for the scaler)
         num_features = scaler.n_features_in_
         dummy = np.zeros((cloud_config.FORECAST_DAYS, num_features))
         dummy[:, 3] = preds_scaled[0]
@@ -122,12 +126,6 @@ def get_backtest_predictions(model, scaler, full_df, depth=30):
         
     return pd.Series(historical_preds, index=backtest_dates)
 
-def run_sentiment_drift_analysis(model, scaler, target_month_data):
-    # Simplified placeholder for drift logic
-    actual_sentiment = target_month_data['Sentiment'].mean()
-    drift_score = np.random.uniform(-5, 5)
-    return actual_sentiment + drift_score, actual_sentiment - drift_score
-
 # Main UI
 st.title("BTC Profit and Sentiment Predictor")
 st.markdown("### Powered by LSTM and Market Psychology")
@@ -150,17 +148,22 @@ if model and scaler and not full_df.empty:
         
         def generate_base_forecast():
             """Standardized model forecasting (Runs once at startup)."""
-            # Use CLEAN data for core inference (Yesterday's official state)
-            recent_data = clean_df.tail(cloud_config.LOOKBACK_DAYS)
-            mean, std = predict_with_uncertainty(model, scaler, recent_data, iterations=50)
-            tight_std = std * 0.5
             
-            # AUTOMATED DRIFT UPDATE (Startup or Run)
-            with st.spinner("Refining Market Drift..."):
-                drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) # Small depth for speed
+            # 1. AUTOMATED DRIFT UPDATE (Run FIRST to calibrate)
+            with st.spinner("Refining Market Sentiment Drift..."):
+                drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) 
                 avg_drift = drift_df['Drift'].mean()
                 latest_price = clean_df['Close'].iloc[-1]
                 lifecycle.save_calibration_state(avg_drift, latest_price)
+
+            # 2. APPLY DRIFT TO INPUT DATA
+            # We copy the tail and shift the Sentiment column to align with market weight
+            recent_data = clean_df.tail(cloud_config.LOOKBACK_DAYS).copy()
+            recent_data['Sentiment'] = recent_data['Sentiment'] + avg_drift
+            
+            # 3. FORECAST ON CALIBRATED DATA
+            mean, std = predict_with_uncertainty(model, scaler, recent_data, iterations=50)
+            tight_std = std * 0.5
             
             # Use CLEAN data tail for forecast start
             forecast_start = clean_df.index[-1] + timedelta(days=1)

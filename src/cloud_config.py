@@ -13,8 +13,12 @@ MODEL_PATH = os.path.join(MODEL_DIR, "btc_lstm_model.h5")
 
 # Dataset Configuration
 LOOKBACK_DAYS = 60
-FORECAST_DAYS = 30  # Increased for "Time-to-Profit" prediction
+FORECAST_DAYS = 30  # Multi-step prediction window
+FEATURE_COUNT = 12  # Macro Gravity Schema (OHLCV, 4 asset ratios, RSI, Sentiment, Trends)
 YEARS_HISTORY = 6
+
+# Default Baselines
+TRENDS_BASELINE = 50.0  # Fallback for Google Trends API lockout
 
 # Vertex AI Training Config
 MACHINE_TYPE = "n1-standard-4"
