@@ -8,6 +8,9 @@ from pytrends.request import TrendReq
 from google.cloud import storage
 import io
 import cloud_config as cloud_config
+import time
+import feedparser
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 def fetch_btc_data(years=cloud_config.YEARS_HISTORY, start_date=None):
     """Fetch historical BTC, ETH, Gold, and Oil data for ratio analysis."""
@@ -74,6 +77,34 @@ def fetch_sentiment_data():
     else:
         raise Exception("Failed to fetch sentiment data")
 
+def fetch_rss_sentiment():
+    """Fetch recent news sentiment from RSS feeds using VADER NLP."""
+    print("Fetching News Sentiment from RSS feeds...")
+    analyzer = SentimentIntensityAnalyzer()
+    all_scores = []
+    
+    for url in cloud_config.RSS_FEEDS:
+        try:
+            feed = feedparser.parse(url)
+            # Take the latest 10 headlines from each feed
+            entries = feed.entries[:10]
+            for entry in entries:
+                # VADER compound score is -1 (bearish) to 1 (bullish)
+                score = analyzer.polarity_scores(entry.title)['compound']
+                all_scores.append(score)
+        except Exception as e:
+            print(f"Error parsing RSS feed {url}: {e}")
+            
+    if not all_scores:
+        return 50.0 # Neutral fallback
+    
+    # Map average [-1, 1] to [0, 100] scale
+    mean_sentiment = sum(all_scores) / len(all_scores)
+    final_score = (mean_sentiment + 1) * 50
+    
+    print(f"Aggregated RSS Sentiment: {final_score:.2f}")
+    return final_score
+
 def prepare_merged_dataset(force_refresh=False):
     """Merge price, sentiment, and trends data with incremental updates."""
     local_path = os.path.join(cloud_config.DATA_DIR, "merged_data.csv")
@@ -116,9 +147,9 @@ def prepare_merged_dataset(force_refresh=False):
     all_sentiment_df = fetch_sentiment_data()
     new_sentiment_df = all_sentiment_df[all_sentiment_df.index >= start_date]
     
-    # 3. Trends (Baseline for now)
-    new_merged_df = new_price_df.join(new_sentiment_df, how='left')
-    new_merged_df['Google_Trends'] = cloud_config.TRENDS_BASELINE
+    # 3. News Sentiment (Replaces Google Trends baseline to maintain 12-feature schema)
+    news_val = fetch_rss_sentiment()
+    new_merged_df['News_Sentiment'] = news_val
     
     # Combine with existing
     if not existing_df.empty:
@@ -126,6 +157,9 @@ def prepare_merged_dataset(force_refresh=False):
         full_df = full_df[~full_df.index.duplicated(keep='last')].sort_index()
     else:
         full_df = new_merged_df
+    
+    # Ensure column order matches training: [OHLCV, Ratios, Macro, RSI, Sentiment, News]
+    # (Replacing Google_Trends at index 11)
     
     full_df.ffill(inplace=True)
     full_df.dropna(inplace=True)
@@ -142,16 +176,7 @@ def prepare_merged_dataset(force_refresh=False):
     
     return full_df, clean_df
 
-def save_to_gcs(df, filename):
-    """Upload dataframe to GCS bucket as CSV."""
-    client = storage.Client(project=cloud_config.PROJECT_ID)
-    bucket = client.bucket(cloud_config.BUCKET_NAME)
-    blob = bucket.blob(f"{cloud_config.DATA_DIR}/{filename}")
-    
-    csv_buffer = io.StringIO()
-    df.to_csv(csv_buffer)
-    blob.upload_from_string(csv_buffer.getvalue(), content_type='text/csv')
-    print(f"Uploaded {filename} to gs://{cloud_config.BUCKET_NAME}")
+# Removed save_to_gcs (Deadcode - Deployment script handles sync via 'gcloud storage cp')
 
 def create_sequences(scaled_data, lookback=cloud_config.LOOKBACK_DAYS, forecast=cloud_config.FORECAST_DAYS):
     """Create multi-step sequences for LSTM."""

@@ -155,7 +155,7 @@ if model and scaler and not full_df.empty:
             """Standardized model forecasting (Runs once at startup)."""
             
             # 1. AUTOMATED DRIFT UPDATE (Run FIRST to calibrate)
-            with st.spinner("Refining Market Sentiment Drift..."):
+            with st.spinner("Analyzing RSS Sentiment & Market Alignment..."):
                 drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) 
                 avg_drift = drift_df['Drift'].mean()
                 latest_price = clean_df['Close'].iloc[-1]
@@ -164,7 +164,9 @@ if model and scaler and not full_df.empty:
             # 2. APPLY DRIFT TO INPUT DATA
             # We copy the tail and shift the Sentiment column to align with market weight
             recent_data = clean_df.tail(cloud_config.LOOKBACK_DAYS).copy()
-            recent_data['Sentiment'] = recent_data['Sentiment'] + avg_drift
+            
+            # Use the drift calculated in calibration.py
+            recent_data['Sentiment'] = np.clip(recent_data['Sentiment'] + avg_drift, 0, 100)
             
             # 3. FORECAST ON CALIBRATED DATA
             mean, std = predict_with_uncertainty(model, scaler, recent_data, iterations=50)

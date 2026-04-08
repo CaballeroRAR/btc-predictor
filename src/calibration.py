@@ -70,19 +70,21 @@ def batch_calibrate_sentiment(model, scaler, full_df, depth=30):
         drift_scaled = calculate_daily_drift(model, scaler, window, actual_price)
         
         # Convert drift back to 'Sentiment Points' (0-100 scale)
-        # Scaler transformation for Sentiment (Index 10):
-        # Result = (Raw - Min) / (Max - Min)
-        # So Drif_Raw = Drift_Scaled * (Max - Min)
-        sentiment_range = scaler.data_range_[10]
+        # For MinMaxScaler: scaled = (raw - min) / (max - min)
+        # Therefore: delta_raw = delta_scaled * (max - min)
+        sentiment_index = 10 # Fear & Greed Index
+        sentiment_range = scaler.data_range_[sentiment_index]
         drift_points = drift_scaled * sentiment_range
         
-        market_aligned = actual_sentiment + drift_points
+        # Market Aligned Sentiment = Signal + Optimal Drift
+        # CLIP to valid range [0, 100] to prevent out-of-distribution inputs
+        market_aligned = np.clip(actual_sentiment + drift_points, 0, 100)
         
         results.append({
             "Date": full_df.index[i],
             "Actual_Sentiment": actual_sentiment,
             "Market_Aligned": market_aligned,
-            "Drift": drift_points # Positive drift means market is more optimistic than signal
+            "Drift": market_aligned - actual_sentiment # Resulting effective drift
         })
         
     return pd.DataFrame(results).set_index("Date")

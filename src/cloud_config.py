@@ -19,6 +19,10 @@ YEARS_HISTORY = 6
 
 # Default Baselines
 TRENDS_BASELINE = 50.0  # Fallback for Google Trends API lockout
+RSS_FEEDS = [
+    "https://cointelegraph.com/rss",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml"
+]
 
 # Vertex AI Training Config
 MACHINE_TYPE = "n1-standard-4"

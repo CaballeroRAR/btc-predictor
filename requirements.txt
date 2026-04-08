@@ -12,3 +12,5 @@ streamlit
 joblib
 plotly
 google-cloud-aiplatform
+feedparser
+vaderSentiment
