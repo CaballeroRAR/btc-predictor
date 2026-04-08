@@ -26,6 +26,11 @@ def calculate_daily_drift(model, scaler, input_data, actual_price, iterations=50
     
     optimizer = keras.optimizers.Adam(learning_rate=lr)
     
+    # Keras 3 Stability: Define a static call for gradient calculation
+    @tf.function(reduce_retracing=True)
+    def call_model(X_in):
+        return model(X_in, training=False)
+    
     for _ in range(iterations):
         with tf.GradientTape() as tape:
             # Sentiment is the 11th column (index 10 in our 12-feature pipeline)
@@ -36,7 +41,7 @@ def calculate_daily_drift(model, scaler, input_data, actual_price, iterations=50
             X_calib = X_orig + (drift * mask)
             
             # Predict only the first step (Tomorrow's Price)
-            preds = model(X_calib, training=False)
+            preds = call_model(X_calib)
             pred_price = preds[0, 0] # Index 0 of the 30-day forecast
             
             loss = tf.square(pred_price - target_price_scaled)

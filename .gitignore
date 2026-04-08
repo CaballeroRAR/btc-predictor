@@ -10,3 +10,4 @@ notebooks/
 cloudbuild.*.yaml
 Dockerfile.*
 linkedin_showcase.md
+.agent/

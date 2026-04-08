@@ -110,13 +110,18 @@ def get_backtest_predictions(model, scaler, full_df, depth=30):
     backtest_dates = full_df.index[-depth:]
     historical_preds = []
     
+    # Keras 3 Stability: Define a static call
+    @tf.function(reduce_retracing=True)
+    def call_model(X_in):
+        return model(X_in, training=False)
+
     for i in range(len(full_df) - depth, len(full_df)):
         # Data window: [i-60, i]
         window = full_df.iloc[i - lookback : i]
         scaled_window = scaler.transform(window.values)
         X = np.expand_dims(scaled_window, axis=0)
         # 1-day ahead is the first element of the forecast
-        pred_scaled = model(X, training=False)[0, 0] 
+        pred_scaled = call_model(X)[0, 0] 
         
         num_features = scaler.n_features_in_
         dummy = np.zeros((1, num_features))
