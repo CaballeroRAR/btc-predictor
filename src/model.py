@@ -24,5 +24,5 @@ def build_lstm_model(input_shape):
 
 if __name__ == "__main__":
     # Test build
-    model = build_lstm_model((cloud_config.LOOKBACK_DAYS, 9))
+    model = build_lstm_model((cloud_config.LOOKBACK_DAYS, 12))
     model.summary()

@@ -16,6 +16,22 @@ The latest version (v2.0) introduces significant architectural improvements over
 
 ---
 
+## Phase 3: Stability & Performance Logic
+
+The current version (Phase 3) transforms the dashboard from a static visualizer into a high-performance, persistent investment tracking engine:
+
+1.  **Incremental Data Loading**: Refactored the data loader to check for existing local data and fetch only the "missing delta" (the few days since the last run). This reduces API overhead and significantly improves startup speed.
+2.  **Dual-Layer Performance Tracking**:
+    -   **Historical Accuracy (D-1)**: Compares yesterday's actual market close against the mean of all predictions made on the day before.
+    -   **Session Predicted Mean (Today)**: Compares the mean of all simulations run so far today against the latest live Bitcoin price, featuring a detailed **Hover Tooltip** with individual heartbeat logs.
+3.  **Decoupled Investment Planning**: The slow model inference (50 iterations) is now decoupled from the simulation logic. Adjusting "Profit Targets" or "Entry Prices" provides **instant feedback** on withdrawal dates without re-running the heavy model.
+4.  **Manual & Auto-Drift Management**:
+    -   **Auto-Run**: The system automatically calculates **Sentiment Drift** on dashboard startup to align the forecast with yesterday's market action.
+    -   **Force Refresh**: A manual "Force Market Refresh" button in the sidebar clears the cache, fetches fresh data, and re-predicts the 30-day window on demand.
+5.  **Persistent Investment Journal**: Tracking ROI and **Withdrawal Date Shifts**. If today's forecast moves your target date earlier or later, the Journal dynamically updates with success/warning notifications.
+
+---
+
 ## Architectural Principles & Solved Quirks
 
 Our infrastructure has stabilized over standard GCP setups by solving these complex issues natively:
