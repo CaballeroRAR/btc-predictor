@@ -397,16 +397,37 @@ if model and scaler and not full_df.empty:
                         orig_t_str = inv.get('original_withdrawal_date')
                         if orig_t_str and orig_t_str != "None":
                             orig_t_dt = pd.to_datetime(orig_t_str)
+                            
+                            # Pin Original Diamond to Snapshot Forecast Line
+                            orig_t_price = target_price
+                            try:
+                                # Find index of orig_t_dt in f_dates
+                                for i, d in enumerate(f_dates):
+                                    if d.date() == orig_t_dt.date():
+                                        orig_t_price = f_prices[i]
+                                        break
+                            except: pass
+
                             m_fig.add_trace(go.Scatter(
-                                x=[orig_t_dt], y=[target_price],
+                                x=[orig_t_dt], y=[orig_t_price],
                                 mode='markers+text', name='Original Target',
                                 text=["Orig"], textposition="top center",
                                 marker=dict(color='red', size=12, symbol='diamond')
                             ))
                         
                         if curr_date:
+                            # Pin Current Diamond to Live Forecast Line
+                            curr_t_price = target_price
+                            try:
+                                # Find index of curr_date in curr_dates
+                                for i, d in enumerate(curr_dates):
+                                    if d.date() == curr_date.date():
+                                        curr_t_price = curr_price_forecast[i]
+                                        break
+                            except: pass
+
                             m_fig.add_trace(go.Scatter(
-                                x=[curr_date], y=[target_price],
+                                x=[curr_date], y=[curr_t_price],
                                 mode='markers+text', name='Current Target',
                                 text=["Curr"], textposition="bottom center",
                                 marker=dict(color='#00ffff', size=12, symbol='diamond-open')
@@ -417,7 +438,13 @@ if model and scaler and not full_df.empty:
                             paper_bgcolor='black', plot_bgcolor='black', 
                             margin=dict(l=0, r=0, t=10, b=0), showlegend=False
                         )
-                        m_fig.update_xaxes(tickformat="%a %d", showgrid=True, gridcolor='#222')
+                        # Show all days in the week with 24h subdivisions
+                        m_fig.update_xaxes(
+                            tickformat="%a %d", 
+                            dtick=86400000.0, 
+                            showgrid=True, 
+                            gridcolor='#222'
+                        )
                         st.plotly_chart(m_fig, use_container_width=True)
 
     st.divider()
