@@ -161,14 +161,14 @@ if model and scaler and not full_df.empty:
                 st.write("**Recent Error:** Run Simulation to evaluate")
             
             st.divider()
-            if st.button("Recalibrate Market Alignment", use_container_width=True):
+            if st.button("Recalibrate Market Alignment", use_container_width=True, help="Re-tunes the sentiment drift logic using the currently loaded data. Use this if the price is correct but the forecast alignment feels off."):
                 for key in ['base_forecast', 'results']:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.info("Recalibrating psychological drift...")
                 st.rerun()
 
-            if st.button("Force Market Refresh", use_container_width=True):
+            if st.button("Force Market Refresh", use_container_width=True, help="Clears all cached data and downloads the latest BTC price, Macro assets, and News Sentiment from the internet."):
                 st.cache_data.clear()
                 for key in ['base_forecast', 'results', 'plan_triggered']:
                     if key in st.session_state:
