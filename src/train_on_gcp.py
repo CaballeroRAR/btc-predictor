@@ -25,7 +25,6 @@ def launch_vertex_ai_job(image_uri):
     
     # Run the job using the SPOT provisioning model
     job.run(
-        model_display_name="btc-lstm-v2",
         args=[],
         replica_count=1,
         machine_type=machine_type,
