@@ -347,7 +347,6 @@ if model and scaler and not full_df.empty:
                         f_dates = [pd.to_datetime(d) for d in inv['forecast_dates']]
                         f_prices = np.array(inv['forecast_prices'])
                         f_std = np.array(inv['std'])
-                        f_calib = np.array(inv['calibrated_prices'])
                         target_price = inv['price'] * (1 + inv.get('profit_target', 2.0)/100)
                         
                         upper_bound = f_prices + f_std
@@ -370,8 +369,11 @@ if model and scaler and not full_df.empty:
                         ))
 
                         # Original Forecast
-                        m_fig.add_trace(go.Scatter(x=f_dates, y=f_prices, name='Model', line=dict(color='#00ff00', width=1)))
-                        m_fig.add_trace(go.Scatter(x=f_dates, y=f_calib, name='Calibrated', line=dict(color='#ffaa00', width=1, dash='dash')))
+                        m_fig.add_trace(go.Scatter(x=f_dates, y=f_prices, name='Snapshot Forecast', line=dict(color='#00ff00', width=1, dash='solid')))
+                        
+                        # Live Forecast Overlap
+                        if len(curr_dates) > 0:
+                            m_fig.add_trace(go.Scatter(x=curr_dates, y=curr_price_forecast, name='Live Forecast', line=dict(color='#00ffff', width=1, dash='dot')))
                         
                         # Profit Target Line
                         m_fig.add_trace(go.Scatter(x=f_dates, y=[target_price]*len(f_dates), name='Target', line=dict(color='red', width=1, dash='dot')))
@@ -387,11 +389,35 @@ if model and scaler and not full_df.empty:
                         if profit_day != -1:
                             m_fig.add_trace(go.Scatter(
                                 x=[f_dates[profit_day]], y=[lower_bound[profit_day]],
-                                mode='markers', name='Safe Profit Point',
-                                marker=dict(color='yellow', size=10, symbol='diamond')
+                                mode='markers', name='Lower-Bound Hit',
+                                marker=dict(color='rgba(0, 255, 0, 0.5)', size=8, symbol='circle')
                             ))
                         
-                        m_fig.update_layout(height=250, template="plotly_dark", paper_bgcolor='black', plot_bgcolor='black', margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+                        # Target Date Milestones
+                        orig_t_str = inv.get('original_withdrawal_date')
+                        if orig_t_str and orig_t_str != "None":
+                            orig_t_dt = pd.to_datetime(orig_t_str)
+                            m_fig.add_trace(go.Scatter(
+                                x=[orig_t_dt], y=[target_price],
+                                mode='markers+text', name='Original Target',
+                                text=["Orig"], textposition="top center",
+                                marker=dict(color='red', size=12, symbol='diamond')
+                            ))
+                        
+                        if curr_date:
+                            m_fig.add_trace(go.Scatter(
+                                x=[curr_date], y=[target_price],
+                                mode='markers+text', name='Current Target',
+                                text=["Curr"], textposition="bottom center",
+                                marker=dict(color='#00ffff', size=12, symbol='diamond-open')
+                            ))
+                        
+                        m_fig.update_layout(
+                            height=250, template="plotly_dark", 
+                            paper_bgcolor='black', plot_bgcolor='black', 
+                            margin=dict(l=0, r=0, t=10, b=0), showlegend=False
+                        )
+                        m_fig.update_xaxes(tickformat="%a %d", showgrid=True, gridcolor='#222')
                         st.plotly_chart(m_fig, use_container_width=True)
 
     st.divider()
