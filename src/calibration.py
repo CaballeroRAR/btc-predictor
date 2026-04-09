@@ -73,9 +73,15 @@ def batch_calibrate_sentiment(model, scaler, full_df, depth=30):
     calibration_dates = full_df.index[-depth:]
     results = []
     
+    # We need at least (lookback + 1) rows to calculate drift for a single day
+    if len(full_df) <= lookback:
+        print(f"WARNING: Not enough data for calibration (Need > {lookback} rows, got {len(full_df)}). Skip.")
+        return pd.DataFrame()
+
     # We calibrate each day based on the price that occurred that day
     # using the data available at that time (the lookback window).
-    for i in range(len(full_df) - depth, len(full_df)):
+    start_idx = max(lookback, len(full_df) - depth)
+    for i in range(start_idx, len(full_df)):
         window = full_df.iloc[i - lookback : i]
         actual_price = full_df.iloc[i]['Close']
         actual_sentiment = full_df.iloc[i-1]['Sentiment'] # Real-world signal

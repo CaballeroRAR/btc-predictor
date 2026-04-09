@@ -82,30 +82,29 @@ The system has been sanitized for production:
 
 ### 1. The Neural Architecture (Stacked LSTM)
 The core forecasting engine is a **Sequential Recurrent Neural Network (RNN)** using two stacked **Long Short-Term Memory (LSTM)** layers (64 units each).
-- **Temporal Memory**: LSTMs are used to capture long-range dependencies in market cycles (e.g., historical RSI rebounds vs. DXY trends).
-- **Dropout Regularization**: We apply a $0.2$ Dropout rate between layers. This is critical for **Inference Science**, as it enables our Monte Carlo uncertainty simulations.
-- **Activation & Optimizer**: We utilize **ReLU** for non-linearity and the **Adam** optimizer with a Mean Squared Error (MSE) loss function for regression stability.
+- **Temporal Memory**: LSTMs capture long-range dependencies in market cycles by processing 60-day historical window sequences.
+- **Dropout Regularization**: A 0.2 dropout rate is applied between layers. This is active during the **Monte Carlo (MC) Dropout** phase for uncertainty estimation.
+- **Loss & Optimization**: Optimized via the **Adam** optimizer with Mean Squared Error (MSE) loss, localized on the closing price regression.
 
 ### 2. Feature Engineering: The "Macro Gravity" Schema (12 Features)
-We moved beyond simple price-action by integrating cross-asset proxies that mathematically influence Bitcoin's dollar-denominated value:
-| Feature | Logic / "Gravity" |
-| :--- | :--- |
-| **OHLCV (5)** | Standard market liquidity and price discovery. |
-| **BTC/ETH Ratio** | Risk-on/Risk-off proxy within the crypto ecosystem. |
-| **BTC/Gold Ratio** | "Digital Gold" vs. Physical Gold parity. |
-| **DXY (USD Index)** | Captures dollar-strength headwinds; inverse correlation to BTC. |
-| **US10Y Yields** | Opportunity cost of risk-off yielding assets; global macro headwind. |
-| **RSI (14-day)** | Momentum oscillator for overbought/oversold detection. |
-| **Sentiment** | Institutional/Retail fear & greed index (Fear & Greed API). |
-| **Google Trends** | Social interest and retail "hype" proxy. |
+The system integrates 12 distinct signals to capture market "Gravity":
+- **OHLCV**: Core liquidity and price action.
+- **Network Sentiment**: BTC/ETH Ratio (Network risk proxy).
+- **Gravity Assets**: BTC/Gold Ratio, USD Index (DXY), and US 10-Year Treasury Yields (Asset opportunity cost).
+- **Technical/Social**: RSI (14-day), Fear & Greed Index, and VADER-analyzed RSS News Sentiment.
 
-### 3. Inference Science: Uncertainty & Calibration
-Unlike "black box" predictors, this system provides a probabilistic range:
-- **Monte Carlo Dropout (Uncertainty)**: During inference, we keep Dropout layers **active** (`training=True`) and run 50 simultaneous forecasts. The standard deviation of these outputs forms our high-confidence channels.
-- **Sentiment-Calibrated Drift**: A proprietary optimization layer. If the model is physically underperforming yesterday's price, we use **Gradient Descent** on the `Sentiment` input alone to find the "market-implied" sentiment drift. This recalibrates the green forecast line to match real-world market weight before projecting into the future.
+### 3. Modular System Architecture
+The application has been refactored into a **Three-Tier Architecture** for scalability:
+- **`forecasting_engine.py`**: The "Inference Engine." Handles MC Dropout, backtesting, and the new **Signal Attribution** math.
+- **`ui_blocks.py`**: The "Presentation Layer." Modularized Streamlit components and Plotly visualization logic.
+- **`drift_analysis.py`**: The "Orchestrator." Manages application lifecycle, session state, and user interaction flow.
 
-### 4. Cloud Infrastructure
-- **Vertex AI Custom Container**: Used for local/cloud training parity.
-- **Cloud Run (Dashboard)**: A serverless environment for the Streamlit UI.
-- **Auto-Sync Model Lifecycle**: On every "Cold Start," the dashboard verifies its local `.h5` model against the GCS bucket. If a newer model is detected in GCS, it automatically downloads and hot-swaps the weights in memory.
+### 4. Advanced Evaluation: Signal Attribution & Calibration
+- **Signal Attribution Breakdown**: Using **Feature Ablation**, the model identifies the "appropriate weight" of factor groups. By replacing specific signals (Gravity, Network, or Psychology) with their 60-day mean, the engine quantifies their exact USD impact on the forecast.
+- **Inference Science (MC Dropout)**: The model performs 50 simultaneous forecasts with active dropout to generate a probabilistic 0.5-sigma "Execution Channel."
+- **Gradient-Descent Calibration**: The system self-aligns daily. It runs a localized optimization on the `Sentiment` feature to find the "Market-Aligned" weight, minimizing error relative to the previous day's close price.
+
+### 5. Infrastructure & MLOps
+- **Auto-Sync Model Lifecycle**: On cold start, the system verifies local models against **Google Cloud Storage (GCS)**, performing hot-swaps of weights (`.h5`) if a newer version exists.
+- **Serverless Serving**: Deployed on **GCP Cloud Run** using a scale-to-zero Dockerized architecture for cost-efficiency.
 

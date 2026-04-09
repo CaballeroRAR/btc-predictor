@@ -8,134 +8,29 @@ import os
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import cloud_config as cloud_config
-from data_loader import prepare_merged_dataset, create_sequences
+from data_loader import prepare_merged_dataset
 import investments_manager as inv_mgr
 import calibration as calib
 import model_lifecycle as lifecycle
 import prediction_logger as pred_log
-
-def calculate_withdrawal_date(dates, prices, target_price):
-    """Find the first date where price meets or exceeds target."""
-    for i, p in enumerate(prices):
-        if p >= target_price:
-            return dates[i]
-    return None
+import forecasting_engine as engine
+import ui_blocks as ui
 
 from google.cloud import storage
 
 st.set_page_config(page_title="BTC Predictor Dashboard", layout="wide")
 
-# Helper to load assets (Local or GCS Sync)
-@st.cache_resource
-def load_assets():
-    # Ensure Model Directory exists
-    os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
-
-    # 1. Sync from GCS if local is missing (Cloud Run Cold Start)
-    if not os.path.exists(cloud_config.MODEL_PATH) or not os.path.exists(cloud_config.SCALER_PATH):
-        with st.status("Syncing model from Google Cloud Storage...", expanded=True) as status:
-            try:
-                client = storage.Client()
-                bucket = client.bucket(cloud_config.BUCKET_NAME)
-                
-                # Download Model
-                if not os.path.exists(cloud_config.MODEL_PATH):
-                    st.write("Downloading model...")
-                    blob = bucket.blob(f"{cloud_config.MODEL_DIR}/btc_lstm_model.h5")
-                    blob.download_to_filename(cloud_config.MODEL_PATH)
-                
-                # Download Scaler
-                if not os.path.exists(cloud_config.SCALER_PATH):
-                    st.write("Downloading scaler...")
-                    blob = bucket.blob(f"{cloud_config.MODEL_DIR}/scaler.pkl")
-                    blob.download_to_filename(cloud_config.SCALER_PATH)
-                
-                status.update(label="Sync Complete!", state="complete", expanded=False)
-            except Exception as e:
-                status.update(label="Sync Failed!", state="error", expanded=True)
-                raise RuntimeError(f"Could not retrieve model from GCS: {str(e)}")
-    
-    # 2. Final Load
-    try:
-        model = keras.models.load_model(cloud_config.MODEL_PATH, compile=False)
-        scaler = joblib.load(cloud_config.SCALER_PATH)
-        return model, scaler
-    except Exception as e:
-        st.error(f"Error loading model files: {str(e)}")
-        return None, None
-
+# Helper to get dataset
 @st.cache_data
 def get_full_dataset():
     """Load and cache the full and cleaned merged datasets."""
     return prepare_merged_dataset()
 
-def predict_with_uncertainty(model, scaler, current_data, iterations=20):
-    """
-    Predict next 30 days using Monte Carlo Dropout for 68% CI (1-Sigma).
-    """
-    scaled_input = scaler.transform(current_data.values)
-    X = np.expand_dims(scaled_input, axis=0)
-    X = tf.convert_to_tensor(X, dtype=tf.float32)
-    
-    # Perform multiple passes with dropout active
-    preds_list = []
-    
-    # Keras 3 Stability: Wrap the functional call to maintain name_scope_stack
-    @tf.function(reduce_retracing=True)
-    def mc_step(X_batch):
-        return model(X_batch, training=True)
-
-    for _ in range(iterations):
-        preds_scaled = mc_step(X)
-        
-        # Inverse transform only the relevant closing price
-        num_features = scaler.n_features_in_
-        dummy = np.zeros((cloud_config.FORECAST_DAYS, num_features))
-        dummy[:, 3] = preds_scaled[0]
-        preds_unscaled = scaler.inverse_transform(dummy)[:, 3]
-        preds_list.append(preds_unscaled)
-        
-    preds_list = np.array(preds_list)
-    mean = preds_list.mean(axis=0)
-    std = preds_list.std(axis=0) # 1-Sigma (68% CI)
-    
-    return mean, std
-
-def get_backtest_predictions(model, scaler, full_df, depth=30):
-    """
-    Generate 1-day-ahead predictions for the last 'depth' days.
-    Ensures NO data leakage.
-    """
-    lookback = cloud_config.LOOKBACK_DAYS
-    backtest_dates = full_df.index[-depth:]
-    historical_preds = []
-    
-    # Keras 3 Stability: Define a static call
-    @tf.function(reduce_retracing=True)
-    def call_model(X_in):
-        return model(X_in, training=False)
-
-    for i in range(len(full_df) - depth, len(full_df)):
-        # Data window: [i-60, i]
-        window = full_df.iloc[i - lookback : i]
-        scaled_window = scaler.transform(window.values)
-        X = np.expand_dims(scaled_window, axis=0)
-        # 1-day ahead is the first element of the forecast
-        pred_scaled = call_model(X)[0, 0] 
-        
-        num_features = scaler.n_features_in_
-        dummy = np.zeros((1, num_features))
-        dummy[0, 3] = pred_scaled
-        pred_unscaled = scaler.inverse_transform(dummy)[0, 3]
-        historical_preds.append(pred_unscaled)
-        
-    return pd.Series(historical_preds, index=backtest_dates)
-
 # Main UI
 st.title("BTC Profit and Sentiment Predictor")
 st.markdown("### Powered by LSTM and Market Psychology")
 
-model, scaler = load_assets()
+model, scaler = lifecycle.load_assets()
 full_df, clean_df = get_full_dataset()
 
 if model and scaler and not full_df.empty:
@@ -157,7 +52,7 @@ if model and scaler and not full_df.empty:
             # 1. AUTOMATED DRIFT UPDATE (Run FIRST to calibrate)
             with st.spinner("Analyzing RSS Sentiment & Market Alignment..."):
                 drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) 
-                avg_drift = drift_df['Drift'].mean()
+                avg_drift = drift_df['Drift'].mean() if not drift_df.empty else 0.0
                 latest_price = clean_df['Close'].iloc[-1]
                 lifecycle.save_calibration_state(avg_drift, latest_price)
 
@@ -169,13 +64,17 @@ if model and scaler and not full_df.empty:
             recent_data['Sentiment'] = np.clip(recent_data['Sentiment'] + avg_drift, 0, 100)
             
             # 3. FORECAST ON CALIBRATED DATA
-            mean, std = predict_with_uncertainty(model, scaler, recent_data, iterations=50)
+            mean, std = engine.predict_with_uncertainty(model, scaler, recent_data, iterations=50)
             tight_std = std * 0.5
             
+            # 4. SIGNAL ATTRIBUTION & IMPACT (Ablation Analysis)
+            with st.status("Evaluating Signal Attribution...", expanded=False):
+                impact_df = engine.calculate_signal_impact(model, scaler, recent_data, mean)
+
             # Use CLEAN data tail for forecast start
             forecast_start = clean_df.index[-1] + timedelta(days=1)
             forecast_dates = [forecast_start + timedelta(days=i) for i in range(cloud_config.FORECAST_DAYS)]
-            backtest_series = get_backtest_predictions(model, scaler, clean_df)
+            backtest_series = engine.get_backtest_predictions(model, scaler, clean_df)
             
             # Persist this heartbeat (log to daily history)
             pred_log.log_predictions(forecast_dates, mean)
@@ -185,13 +84,14 @@ if model and scaler and not full_df.empty:
                 'prices': mean,
                 'std': tight_std,
                 'backtest': backtest_series,
-                'avg_drift': avg_drift
+                'avg_drift': avg_drift,
+                'impact_df': impact_df
             }
 
         def calculate_withdrawal_plan(base_res, entry_price, profit_target, investment):
             """Instant calculation for investment strategy on top of existing forecast."""
             target_val = entry_price * (1 + profit_target/100)
-            withdrawal_date = calculate_withdrawal_date(base_res['dates'], base_res['prices'], target_val)
+            withdrawal_date = engine.calculate_withdrawal_date(base_res['dates'], base_res['prices'], target_val)
             
             return {
                 **base_res,
@@ -315,18 +215,7 @@ if model and scaler and not full_df.empty:
             forecast_today_val = float(st.session_state['base_forecast']['prices'][0])
             forecast_today_date = st.session_state['base_forecast']['dates'][0].strftime('%Y-%m-%d')
         
-        st.subheader("Market Summary")
-        mcols = st.columns(3)
-        mcols[0].metric(f"Live BTC ({latest_date_val.strftime('%H:%M')})", f"${latest_price_val:,.2f}")
-        
-        if forecast_today_val:
-            diff = latest_price_val - forecast_today_val
-            diff_pct = (diff / forecast_today_val) * 100
-            mcols[1].metric(f"Forecast ({forecast_today_date})", f"${forecast_today_val:,.2f}")
-            mcols[2].metric("Difference", f"${diff:,.2f}", f"{diff_pct:+.2f}% vs Forecast")
-        else:
-            mcols[1].write("**Forecast:** Loading...")
-            mcols[2].write("**Difference:** Pending")
+        ui.render_market_summary_metrics(latest_price_val, latest_date_val, forecast_today_val, forecast_today_date)
         
         # Only show simulation results if the user has explicitly triggered a plan
         if st.session_state.get('plan_triggered') and st.session_state['results'].get('withdrawal_date'):
@@ -348,57 +237,8 @@ if model and scaler and not full_df.empty:
         # Dual Performance Summaries
         if 'results' in st.session_state:
             st.divider()
-            
             history_df = pred_log.get_performance_stats()
-            
-            if not history_df.empty:
-                # 1. Historical Performance (Yesterday D-1)
-                # Yesterday is clean_df.index[-1]
-                yesterday_date = clean_df.index[-1].strftime('%Y-%m-%d')
-                actual_yesterday = clean_df['Close'].iloc[-1]
-                
-                # We want predictions made ON 'Yesterday-1' FOR 'Yesterday'
-                day_before_yesterday = (clean_df.index[-1] - timedelta(days=1)).strftime('%Y-%m-%d')
-                pred_yesterday = history_df[
-                    (history_df['sim_run_date'] == day_before_yesterday) & 
-                    (history_df['forecast_date'] == yesterday_date)
-                ]['predicted_price']
-                
-                # 2. Live Today Snapshot (D)
-                # Predictions made TODAY for TODAY
-                today_tag = datetime.now().strftime('%Y-%m-%d')
-                pred_today = history_df[
-                    (history_df['sim_run_date'] == today_tag) & 
-                    (history_df['forecast_date'] == today_tag)
-                ]['predicted_price']
-                
-                st.subheader("Model Performance Summary")
-                mcols = st.columns(2)
-                
-                with mcols[0]:
-                    st.write("**Yesterday's Accuracy (D-1)**")
-                    if not pred_yesterday.empty:
-                        p_mean = pred_yesterday.mean()
-                        st.metric(f"Market Close ({yesterday_date})", f"${actual_yesterday:,.2f}")
-                        st.metric("Predicted Mean", f"${p_mean:,.2f}", delta=f"{((p_mean/actual_yesterday)-1)*100:.2f}% Error")
-                    else:
-                        st.info("No predictions found from Day D-2 for yesterday.")
-                
-                with mcols[1]:
-                    st.write("**Live Today Snapshot (D)**")
-                    if not pred_today.empty:
-                        p_today_mean = pred_today.mean()
-                        run_count = len(pred_today)
-                        run_list = ", ".join([f"${v:,.0f}" for v in pred_today.tolist()])
-                        
-                        st.metric(
-                            "Session Predicted Mean", 
-                            f"${p_today_mean:,.2f}", 
-                            delta=f"{((p_today_mean/latest_price_val)-1)*100:.2f}% vs Live",
-                            help=f"Aggregated from {run_count} simulations today.\nIndividual values: {run_list}"
-                        )
-                    else:
-                        st.info("Run a simulation today to populate live metrics.")
+            ui.render_performance_summaries(history_df, clean_df, latest_price_val)
             
             st.divider()
             res = st.session_state['results']
@@ -451,6 +291,10 @@ if model and scaler and not full_df.empty:
         )
         st.plotly_chart(fig, use_container_width=True)
 
+        # Signal Attribution & Impact Analysis
+        if 'base_forecast' in st.session_state:
+            ui.render_signal_attribution_analysis(st.session_state['base_forecast'].get('impact_df'))
+
     with tab2:
         st.subheader("Saved Investments")
         investments = inv_mgr.load_investments()
@@ -472,7 +316,7 @@ if model and scaler and not full_df.empty:
                         curr_dates = base_res.get('dates', [])
                         
                         target_price = inv['price'] * (1 + inv.get('profit_target', 2.0)/100)
-                        curr_date = calculate_withdrawal_date(curr_dates, curr_price_forecast, target_price)
+                        curr_date = engine.calculate_withdrawal_date(curr_dates, curr_price_forecast, target_price)
                         
                         st.write(f"**Original Target Date:** {orig_date_str[:10]}")
                         if curr_date:

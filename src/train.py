@@ -10,7 +10,7 @@ from model import build_lstm_model
 
 def train_pipeline():
     # 1. Load Data
-    df = prepare_merged_dataset()
+    _, df = prepare_merged_dataset()
     
     # 2. Scale Features
     scaler = MinMaxScaler()

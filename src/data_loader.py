@@ -4,7 +4,6 @@ import requests
 import os
 from datetime import datetime, timedelta
 import numpy as np
-from pytrends.request import TrendReq
 from google.cloud import storage
 import io
 import cloud_config as cloud_config
@@ -146,7 +145,10 @@ def prepare_merged_dataset(force_refresh=False):
     all_sentiment_df = fetch_sentiment_data()
     new_sentiment_df = all_sentiment_df[all_sentiment_df.index >= start_date]
     
-    # 3. News Sentiment (Replaces Google Trends baseline to maintain 12-feature schema)
+    # 3. Join Price and Sentiment Delta
+    new_merged_df = new_price_df.join(new_sentiment_df, how='left')
+    
+    # 4. News Sentiment (Replaces Google Trends baseline to maintain 12-feature schema)
     news_val = fetch_rss_sentiment()
     new_merged_df['News_Sentiment'] = news_val
     
@@ -159,6 +161,16 @@ def prepare_merged_dataset(force_refresh=False):
     
     # Ensure column order matches training: [OHLCV, Ratios, Macro, RSI, Sentiment, News]
     # (Replacing Google_Trends at index 11)
+    if 'Google_Trends' in full_df.columns:
+        full_df.drop(columns=['Google_Trends'], inplace=True)
+    
+    # Explicitly enforce 12 features to prevent dimension mismatches
+    expected_cols = [
+        'Open', 'High', 'Low', 'Close', 'Volume', 
+        'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
+        'Sentiment', 'News_Sentiment'
+    ]
+    full_df = full_df[expected_cols]
     
     full_df.ffill(inplace=True)
     full_df.dropna(inplace=True)

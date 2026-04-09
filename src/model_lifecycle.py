@@ -1,9 +1,51 @@
 import os
 import json
+import keras
+import joblib
+import streamlit as st
 from datetime import datetime
+from google.cloud import storage
 import cloud_config as cloud_config
 
 CALIBRATION_FILE = "data/calibration_state.json"
+
+@st.cache_resource
+def load_assets():
+    """Download from GCS if missing, then load model and scaler into memory."""
+    os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
+
+    # 1. Sync from GCS if local is missing (Cloud Run Cold Start)
+    if not os.path.exists(cloud_config.MODEL_PATH) or not os.path.exists(cloud_config.SCALER_PATH):
+        with st.status("Syncing model from Google Cloud Storage...", expanded=True) as status:
+            try:
+                client = storage.Client()
+                bucket = client.bucket(cloud_config.BUCKET_NAME)
+                
+                # Download Model
+                if not os.path.exists(cloud_config.MODEL_PATH):
+                    st.write("Downloading model...")
+                    blob = bucket.blob(f"{cloud_config.MODEL_DIR}/btc_lstm_model.h5")
+                    blob.download_to_filename(cloud_config.MODEL_PATH)
+                
+                # Download Scaler
+                if not os.path.exists(cloud_config.SCALER_PATH):
+                    st.write("Downloading scaler...")
+                    blob = bucket.blob(f"{cloud_config.MODEL_DIR}/scaler.pkl")
+                    blob.download_to_filename(cloud_config.SCALER_PATH)
+                
+                status.update(label="Sync Complete!", state="complete", expanded=False)
+            except Exception as e:
+                status.update(label="Sync Failed!", state="error", expanded=True)
+                raise RuntimeError(f"Could not retrieve model from GCS: {str(e)}")
+    
+    # 2. Final Load
+    try:
+        model = keras.models.load_model(cloud_config.MODEL_PATH, compile=False)
+        scaler = joblib.load(cloud_config.SCALER_PATH)
+        return model, scaler
+    except Exception as e:
+        st.error(f"Error loading model files: {str(e)}")
+        return None, None
 
 def get_model_info():
     """Returns model age in days and training timestamp."""
