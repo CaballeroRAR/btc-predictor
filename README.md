@@ -12,13 +12,19 @@ The latest version (v2.0) introduces significant architectural improvements over
     *   **US10Y (Treasury Yields)**: Captures the opportunity cost of risk-off yielding assets.
 2.  **High-Confidence Channels (0.5-Sigma)**: The dashboard probability bands are now tightened to 0.5 standard deviations. This creates a focused, high-conviction "Execution Channel" that tracks the mean movement much more closely than standard 1-sigma bands.
 3.  **Monte Carlo Uncertainty (50 Iterations)**: We increased the simulation count to 50 for smoother, more deterministic forecast trajectories.
-4.  **Dynamic Scaling Engine**: The system is now architecture-agnostic. It automatically detects the feature count (9 vs 12) from the loaded `.pkl` scaler, preventing dimension-mismatch crashes.
+4.  **Decoupled 3-Tier Architecture**: The application has been refactored into a modular infrastructure (Inference Engine, UI Blocks, and Orchestrator) to ensure scalability and ease of maintenance.
+5.  **Explainable AI (XAI) Integration**: v2.0 introduces Signal Attribution via Feature Ablation, allowing users to see the specific USD impact of Macro, Network, and Psychological factor groups.
 
 ---
 
-## Phase 3: Stability & Performance Logic
+## [PROCESS] Phase 4: Stability, Precision & XAI
 
-The current version (Phase 3) transforms the dashboard from a static visualizer into a high-performance, persistent investment tracking engine:
+Current system state (Phase 4) transforms the dashboard into a high-performance, persistent investment tracking and analysis platform:
+
+1.  **Signal Attribution Engine (XAI)**: Using **Feature Ablation**, the model identifies the "appropriate weight" of factor groups. By replacing specific signals (Gravity, Network, or Psychology) with their 60-day mean, the engine quantifies their exact USD impact on the forecast.
+2.  **Precision Pinning Visualization**: The Investment Journal now features high-accuracy coordinate tracking. Target markers ("Orig" and "Curr") are dynamically pinned to their respective forecast trajectories (Snapshot vs. Live) rather than a static price level.
+3.  **High-Frequency Calibration**: Market sentiment drift is optimized daily via Gradient Descent to align model behavior with near-real-time psychological shifts.
+4.  **Agent-Orchestrated MLOps**: The project is managed by a suite of specialized AI Agents (Dispatcher, Refactor Supervisor, Style Auditor) to maintain structural integrity and a Standardized Professional Tone (SPT).
 
 1.  **Incremental Data Loading**: Refactored the data loader to check for existing local data and fetch only the "missing delta" (the few days since the last run). This reduces API overhead and significantly improves startup speed.
 2.  **Dual-Layer Performance Tracking**:
@@ -28,7 +34,7 @@ The current version (Phase 3) transforms the dashboard from a static visualizer 
 4.  **Manual & Auto-Drift Management**:
     -   **Auto-Run**: The system automatically calculates **Sentiment Drift** on dashboard startup to align the forecast with yesterday's market action.
     -   **Force Refresh**: A manual "Force Market Refresh" button in the sidebar clears the cache, fetches fresh data, and re-predicts the 30-day window on demand.
-5.  **Persistent Investment Journal**: Tracking ROI and **Withdrawal Date Shifts**. If today's forecast moves your target date earlier or later, the Journal dynamically updates with success/warning notifications.
+5.  **Persistent Investment Journal**: Tracking ROI and **Withdrawal Date Shifts**. If today's forecast moves your target date earlier or later, the Journal dynamically updates with success/warning notifications and precision-aligned milestone markers.
 
 ---
 
