@@ -28,12 +28,12 @@ if (Test-Path "models/btc_lstm_model.h5") {
 
 # 2. Build Training Pipeline
 Write-Host "`n[2/4] Submitting Training Pipeline build..." -ForegroundColor Yellow
-gcloud builds submit --config cloudbuild.train.yaml . --project $PROJECT_ID
+gcloud builds submit --config infra/train.yaml . --project $PROJECT_ID
 if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Trainer."; exit $LASTEXITCODE }
 
 # 3. Build Dashboard Application
 Write-Host "`n[3/4] Submitting Dashboard App build..." -ForegroundColor Yellow
-gcloud builds submit --config cloudbuild.app.yaml . --project $PROJECT_ID
+gcloud builds submit --config infra/app.yaml . --project $PROJECT_ID
 if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Dashboard."; exit $LASTEXITCODE }
 
 # 4. Deploy to Cloud Run
