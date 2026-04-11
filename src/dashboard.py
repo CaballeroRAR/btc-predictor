@@ -208,7 +208,7 @@ if model and scaler and not full_df.empty:
         
         fig.update_layout(height=500, template="plotly_dark", paper_bgcolor='black', plot_bgcolor='black', margin=dict(l=0, r=0, t=20, b=0))
         st.plotly_chart(fig, use_container_width=True)
-        ui.render_prediction_evaluation_chart(pred_log.get_performance_stats())
+        ui.render_prediction_evaluation_chart(pred_log.get_performance_stats(), full_df, res)
         
         # Signal Impact UI
         if res.get('impact_df') is not None:

@@ -129,74 +129,100 @@ def render_performance_summaries(history_df, clean_df, latest_price_val):
         else:
             st.info("No simulations recorded for today yet.")
 
-def render_prediction_evaluation_chart(history_df):
-    """Render a time-series comparison of Predicted vs Actual closing prices."""
-    if history_df.empty or 'actual_price' not in history_df.columns:
+def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
+    """
+    Render a split-logic accuracy chart:
+    1. Historical Audit (Today-1 and older): Static lines from DB + full_df closes.
+    2. Tactical Monitor (Today): Live Pulsating Dot for active simulation results.
+    """
+    if full_df.empty:
         return
 
     st.divider()
     st.subheader("Model Accuracy: Predicted vs. Actual Closing Prices")
     
-    # Process data: Average predictions per forecast_date
-    eval_df = history_df.dropna(subset=['actual_price']).copy()
-    if eval_df.empty:
-        st.info("Historical actual prices are pending. Run simulation to trigger update.")
-        return
+    today_date = datetime.now().date()
+    
+    # --- 1. HISTORICAL DATA PREPARATION (Date < Today) ---
+    # We take actual closes from the live Market Feed (full_df)
+    hist_actuals = full_df[full_df.index.date < today_date].copy()
+    hist_actuals = hist_actuals.tail(7) 
+    
+    # We take matched predictions from the Database (history)
+    # Group by date to get the mean prediction for each past day
+    if not history_df.empty:
+        history_df['forecast_date'] = pd.to_datetime(history_df['forecast_date'])
+        hist_preds = history_df[history_df['forecast_date'].dt.date < today_date].copy()
+        hist_preds_grouped = hist_preds.groupby(hist_preds['forecast_date'].dt.date)['predicted_price'].mean()
+    else:
+        hist_preds_grouped = pd.Series()
 
-    eval_df['forecast_date'] = pd.to_datetime(eval_df['forecast_date'])
-    # Filter to only show finalized (past) days to maintain accuracy integrity
-    eval_df = eval_df[eval_df['forecast_date'].dt.date < datetime.now().date()]
+    # Create the unified historical evaluation dataframe
+    eval_df = pd.DataFrame(index=hist_actuals.index.date)
+    eval_df['actual_price'] = hist_actuals['Close'].values
+    eval_df['predicted_price'] = hist_preds_grouped
+    eval_df = eval_df.dropna(subset=['predicted_price']) # Only show days we actually predicted
     
     if eval_df.empty:
-        return
-
-    eval_df = eval_df.groupby('forecast_date').agg({
-        'predicted_price': 'mean',
-        'actual_price': 'first'
-    }).reset_index().sort_values('forecast_date')
-
-    # Focus on the last 7 unique days for a sharp assessment
-    eval_df = eval_df.tail(7)
+        st.info("Historical prediction matches are pending. Run simulation to begin tracking.")
+    # --- 2. LIVE DATA PREPARATION (Today) ---
+    live_price = full_df['Close'].iloc[-1]
+    # In live_res, dates[0] is Today's prediction
+    live_pred = live_res['prices'][0] if (live_res and 'prices' in live_res) else None
     
-    # Calculate % Difference (Error)
-    eval_df['error_pct'] = ((eval_df['predicted_price'] / eval_df['actual_price']) - 1) * 100
-
     from plotly.subplots import make_subplots
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Primary Axis - USD Prices
+    # LAYER 1: HISTORICAL AUDIT (Static Lines)
+    if not eval_df.empty:
+        eval_df['error_pct'] = ((eval_df['predicted_price'] / eval_df['actual_price']) - 1) * 100
+        
+        fig.add_trace(go.Scatter(
+            x=eval_df.index, y=eval_df['actual_price'],
+            mode='lines+markers', name='Historical Actual',
+            line=dict(color='#00ff00', width=2)
+        ), secondary_y=False)
+
+        fig.add_trace(go.Scatter(
+            x=eval_df.index, y=eval_df['predicted_price'],
+            mode='lines+markers', name='Historical Mean Pred',
+            line=dict(color='#ff9900', width=1, dash='dot')
+        ), secondary_y=False)
+
+        fig.add_trace(go.Bar(
+            x=eval_df.index, y=eval_df['error_pct'],
+            name='Historical Error %',
+            marker_color='rgba(255, 255, 255, 0.1)',
+            hovertemplate='%{y:.2f}% Error<extra></extra>'
+        ), secondary_y=True)
+
+    # LAYER 2: TACTICAL MONITOR (Live Pulsar for Today)
+    # 1. Today's Market Price (Static Dot)
     fig.add_trace(go.Scatter(
-        x=eval_df['forecast_date'], 
-        y=eval_df['actual_price'],
-        mode='lines+markers',
-        name='Actual Close (USD)',
-        line=dict(color='#00ff00', width=3)
+        x=[today_date], y=[live_price],
+        mode='markers', name='Live Price',
+        marker=dict(color='#00ff00', size=10, symbol='circle')
     ), secondary_y=False)
 
-    fig.add_trace(go.Scatter(
-        x=eval_df['forecast_date'], 
-        y=eval_df['predicted_price'],
-        mode='lines+markers',
-        name='Predicted Mean (USD)',
-        line=dict(color='#ff9900', width=2, dash='dot')
-    ), secondary_y=False)
-
-    # Secondary Axis - % Error
-    fig.add_trace(go.Bar(
-        x=eval_df['forecast_date'],
-        y=eval_df['error_pct'],
-        name='Deviation %',
-        marker_color='rgba(255, 255, 255, 0.2)',
-        hovertemplate='%{y:.2f}% Error<extra></extra>'
-    ), secondary_y=True)
+    # 2. Today's Prediction (Pulsating Dot)
+    if live_pred:
+        # Outer Halo (Pulsar effect)
+        fig.add_trace(go.Scatter(
+            x=[today_date], y=[live_pred],
+            mode='markers', name='Live Target (Pulsar)',
+            marker=dict(color='rgba(0, 255, 255, 0.2)', size=25, symbol='circle')
+        ), secondary_y=False)
+        # Inner Core
+        fig.add_trace(go.Scatter(
+            x=[today_date], y=[live_pred],
+            mode='markers', showlegend=False,
+            marker=dict(color='#00ffff', size=10, symbol='diamond')
+        ), secondary_y=False)
 
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor='black',
-        plot_bgcolor='black',
-        height=450,
-        margin=dict(l=0, r=0, t=30, b=0),
-        xaxis_title="Forecast Date",
+        template="plotly_dark", paper_bgcolor='black', plot_bgcolor='black',
+        height=450, margin=dict(l=0, r=0, t=30, b=0),
+        xaxis_title="Timeline",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
