@@ -6,6 +6,7 @@ import prediction_logger as pred_log
 import calibration as calib
 import model_lifecycle as lifecycle
 import cloud_config as cloud_config
+from data_loader import get_last_hour_price_with_cache
 
 def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER"):
     """
@@ -39,10 +40,12 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER
                     }
 
     # 2. Market Alignment (Drift Analysis)
-    # Note: st.spinner should wrap this call in the UI layer
+    # Using last finished hour price for stability if available
+    hourly_ref = get_last_hour_price_with_cache()
+    latest_price = hourly_ref if hourly_ref else clean_df['Close'].iloc[-1]
+    
     drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) 
     avg_drift = drift_df['Drift'].mean() if not drift_df.empty else 0.0
-    latest_price = clean_df['Close'].iloc[-1]
     lifecycle.save_calibration_state(avg_drift, latest_price)
 
     # 3. Model & Feature Alignment

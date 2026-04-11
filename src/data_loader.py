@@ -1,6 +1,7 @@
 import pandas as pd
 import yfinance as yf
 import requests
+import json
 import os
 from datetime import datetime, timedelta
 import numpy as np
@@ -128,9 +129,9 @@ def prepare_merged_dataset(force_refresh=False):
         # Fetch from the day after the last entry
         start_date = last_date + timedelta(days=1)
         
-    # (If last_date is yesterday/today, we skip yfinance/sentiment fetch)
-    if last_date is not None and start_date.date() >= datetime.now().date():
-        print("Data is already up to date.")
+    # (If last_date is yesterday/today, we skip yfinance/sentiment fetch UNLESS force_refresh is True)
+    if not force_refresh and last_date is not None and start_date.date() >= datetime.now().date():
+        print("Data is already up to date. (Skipping network fetch)")
         clean_df = existing_df.copy()
         if len(clean_df) > 1:
             clean_df = clean_df.iloc[:-1]
@@ -202,6 +203,43 @@ def create_sequences(scaled_data, lookback=cloud_config.LOOKBACK_DAYS, forecast=
         X.append(scaled_data[i : i + lookback])
         y.append(scaled_data[i + lookback : i + lookback + forecast, 3])
     return np.array(X), np.array(y)
+
+def get_last_hour_price_with_cache():
+    """Returns the close price of the last finished hour, using a local cache to minimize API calls."""
+    cache_path = os.path.join("data", "hourly_cache.json")
+    now = datetime.now()
+    
+    # Check Cache
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r') as f:
+                cache = json.load(f)
+                cache_dt = datetime.fromisoformat(cache['timestamp'])
+                # If the cache is from the current hour or later, it's valid for the PREVIOUS finished hour
+                if cache_dt.hour == now.hour and cache_dt.date() == now.date():
+                    return cache['price']
+        except:
+            pass
+            
+    # API Fetch
+    try:
+        data = yf.download("BTC-USD", period="1d", interval="1h", progress=False)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+        
+        if len(data) >= 2:
+            # iloc[-2] is the last completed hour
+            price = float(data['Close'].iloc[-2])
+            
+            # Save Cache
+            os.makedirs("data", exist_ok=True)
+            with open(cache_path, 'w') as f:
+                json.dump({"timestamp": now.isoformat(), "price": price}, f)
+            return price
+    except Exception as e:
+        print(f"Hourly API Error: {e}")
+        
+    return None
 
 if __name__ == "__main__":
     full_df, clean_df = prepare_merged_dataset()
