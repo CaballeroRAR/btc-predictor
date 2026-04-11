@@ -52,7 +52,7 @@ gcloud run deploy $ServiceName `
     --no-allow-unauthenticated `
     --service-account $SaEmail `
     --memory 2Gi `
-    --set-env-vars PROJECT_ID=$ProjectId,SERVICE_ACCOUNT=$SaEmail,BUCKET_NAME=$ModelsBucket `
+    --set-env-vars "PROJECT_ID=$ProjectId,SERVICE_ACCOUNT=$SaEmail,BUCKET_NAME=$ModelsBucket" `
     --quiet
 
 # Verification Gate: Ensure deployment succeeded

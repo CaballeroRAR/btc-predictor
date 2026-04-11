@@ -1,0 +1,25 @@
+gcloud storage cp models/btc_lstm_model.h5 gs://btc-predictor-492515_cloudbuild/models/btc_lstm_model.h5
+gcloud storage cp models/scaler.pkl gs://btc-predictor-492515_cloudbuild/models/scaler.pkl
+gcloud builds submit --config infra/train.yaml . --project btc-predictor-492515
+gcloud config set project btc-predictor-492515
+gcloud builds submit --config infra/dashboard.yaml .
+gcloud run deploy btc-dashboard --image gcr.io/btc-predictor-492515/btc-dashboard --region us-central1 --platform managed --quiet
+gcloud config set project btc-predictor-492515
+gcloud auth application-default set-quota-project btc-predictor-492515 --quiet
+gcloud iam service-accounts list --filter=email:btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --format=value(email) --quiet
+gsutil ls -b gs://btc_predictor_models
+gsutil mb -l us-central1 gs://btc_predictor_models
+gcloud projects add-iam-policy-binding btc-predictor-492515 --member=serviceAccount:btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --role=roles/datastore.user --quiet
+gcloud projects add-iam-policy-binding btc-predictor-492515 --member=serviceAccount:btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --role=roles/aiplatform.user --quiet
+gcloud storage buckets add-iam-policy-binding gs://btc_predictor_models --member=serviceAccount:btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --role=roles/storage.objectAdmin --quiet
+gcloud projects add-iam-policy-binding btc-predictor-492515 --member=serviceAccount:btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --role=roles/iam.serviceAccountUser --quiet
+gcloud projects add-iam-policy-binding btc-predictor-492515 --member=serviceAccount:btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --role=roles/run.invoker --quiet
+gcloud builds submit --config infra/worker.yaml .
+gcloud run deploy btc-tactical-worker --image gcr.io/btc-predictor-492515/btc-tactical-worker --region us-central1 --platform managed --no-allow-unauthenticated --service-account btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --memory 2Gi --set-env-vars PROJECT_ID=btc-predictor-492515,SERVICE_ACCOUNT=btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com,BUCKET_NAME=btc_predictor_models --quiet
+gcloud config set project btc-predictor-492515
+gcloud services enable cloudscheduler.googleapis.com --quiet
+gcloud run services describe btc-tactical-worker --platform managed --region us-central1 --format value(status.url)
+gcloud scheduler jobs create http btc-hourly-recalibrate --schedule=0 * * * * --uri=https://mock-worker-url.a.run.app/recalibrate --http-method=POST --location=us-central1 --oidc-service-account-email=btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --oidc-token-audience=https://mock-worker-url.a.run.app --quiet
+gcloud scheduler jobs update http btc-hourly-recalibrate --schedule=0 * * * * --uri=https://mock-worker-url.a.run.app/recalibrate --location=us-central1 --oidc-service-account-email=btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --oidc-token-audience=https://mock-worker-url.a.run.app --quiet
+gcloud scheduler jobs create http btc-daily-retrain --schedule=0 0 * * * --uri=https://mock-worker-url.a.run.app/retrain --http-method=POST --location=us-central1 --oidc-service-account-email=btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --oidc-token-audience=https://mock-worker-url.a.run.app --quiet
+gcloud scheduler jobs update http btc-daily-retrain --schedule=0 0 * * * --uri=https://mock-worker-url.a.run.app/retrain --location=us-central1 --oidc-service-account-email=btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com --oidc-token-audience=https://mock-worker-url.a.run.app --quiet
