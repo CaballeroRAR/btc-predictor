@@ -55,25 +55,30 @@ def trigger_training_job(service_account=None):
         }]
     )
     
-    # Run the job asynchronously (non-blocking)
-    print(f"[{datetime.now()}] [GCP] Sending create request to Vertex AI backend...")
-    job.run(sync=False, service_account=sa_email)
+    # Run the job
+    print(f"[{datetime.now()}] [GCP] Submitting job to Vertex AI (Waiting for resource ID)...")
     
-    # Generate direct Console Link for terminal convenience (Safely)
     try:
-        # Avoid direct job.resource_name access if the SDK hasn't populated it yet
-        if hasattr(job, "resource_name") and job.resource_name:
-            job_id = job.resource_name.split('/')[-1]
-            console_url = f"https://console.cloud.google.com/vertex-ai/locations/{cloud_config.REGION}/training/{job_id}?project={cloud_config.PROJECT_ID}"
-            print(f"[{datetime.now()}] [GCP] Job Acknowledged! Display Name: {display_name}")
-            print(f"[{datetime.now()}] [GCP] View Training Logs: {console_url}")
-        else:
-            print(f"[{datetime.now()}] [GCP] Job submitted. (Cloud ID assignment pending).")
-            print(f"[{datetime.now()}] [GCP] Display Name: {display_name}")
+        # We use the internal _gca_resource to monitor creation if needed, 
+        # but calling run() is standard. We just need to wait a tiny bit for the ID.
+        job.run(sync=False, service_account=sa_email)
+        
+        # 2. Wait for Resource ID Confirmation (Max 15s)
+        import time
+        for i in range(15):
+            if hasattr(job, "resource_name") and job.resource_name:
+                job_id = job.resource_name.split('/')[-1]
+                console_url = f"https://console.cloud.google.com/vertex-ai/locations/{cloud_config.REGION}/training/{job_id}?project={cloud_config.PROJECT_ID}"
+                print(f"[{datetime.now()}] [GCP] SUCCESS: Job resource created on server.")
+                print(f"[{datetime.now()}] [GCP] Job ID: {job_id}")
+                print(f"[{datetime.now()}] [GCP] Console Link: {console_url}")
+                return job
+            time.sleep(1)
+            
+        print(f"[{datetime.now()}] [WARNING] Job submitted but ID not received yet. Check console manually.")
     except Exception as e:
-        # We catch any SDK 'not created' errors here so the dashboard doesn't crash
-        # This happens because metadata is sometimes populated asynchronously
-        print(f"[{datetime.now()}] [GCP] Job handoff complete. (ID will appear in Dashboard shortly)")
+        print(f"[{datetime.now()}] [ERROR] GCP Submission Rejected: {str(e)}")
+        raise RuntimeError(f"GCP Submission Rejected: {str(e)}")
 
     return job
 

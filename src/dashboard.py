@@ -373,6 +373,15 @@ if model and scaler and not full_df.empty:
                                 inv_mgr.delete_investment(inv['id'])
                                 st.rerun()
     
+    # Infrastructure HUD
+    st.divider()
+    with st.expander("System Infrastructure Status (Admin Only)"):
+        sys_col1, sys_col2, sys_col3 = st.columns(3)
+        sys_col1.write(f"**GCP Project:** `{cloud_config.PROJECT_ID}`")
+        sys_col2.write(f"**Target Region:** `{cloud_config.REGION}`")
+        sys_col3.write(f"**Model Context:** `LOCAL_LSTM_V1`")
+        st.caption("Verify this Project ID matches your Google Cloud URL to ensure you are viewing the correct console.")
+
     st.divider()
     dv = base_res.get('avg_drift', 0.0)
     if abs(dv) > 10: st.error(f"HIGH DRIFT: {dv:+.1f} pts")
