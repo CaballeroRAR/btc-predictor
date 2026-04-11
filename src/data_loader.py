@@ -168,29 +168,48 @@ def prepare_merged_dataset(force_refresh=False):
     else:
         full_df = new_merged_df
     
-    # Ensure column order matches training: [OHLCV, Ratios, Macro, RSI, Sentiment, News]
-    # (Replacing Google_Trends at index 11)
+    # Ensure column order matches training
     if 'Google_Trends' in full_df.columns:
         full_df.drop(columns=['Google_Trends'], inplace=True)
     
-    # Explicitly enforce 12 features to prevent dimension mismatches
     expected_cols = [
         'Open', 'High', 'Low', 'Close', 'Volume', 
         'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
         'Sentiment', 'News_Sentiment'
     ]
+    
+    # Validation 1: Ensure columns exist
+    for col in expected_cols:
+        if col not in full_df.columns:
+            print(f"CRITICAL: Missing feature {col}. Initializing with 0.")
+            full_df[col] = 0.0
+
     full_df = full_df[expected_cols]
     
+    # Validation 2: Imputation instead of aggressive dropping
+    initial_rows = len(full_df)
     full_df.ffill(inplace=True)
-    full_df.dropna(inplace=True)
+    full_df.bfill(inplace=True)
+    full_df.fillna(0, inplace=True)
     
-    # Save the updated dataset locally (Full version)
+    final_rows = len(full_df)
+    print(f"Data Imputation complete. Rows: {initial_rows} -> {final_rows}")
+    
+    if final_rows == 0:
+        raise ValueError("Data Integrity Failure: Dataset is empty after processing.")
+        
+    # Save the updated dataset locally
     full_df.to_csv(local_path)
     
     # Create a Cleaned Version for Model Training/Inference (Drop partial today)
     clean_df = full_df.copy()
     if len(clean_df) > 1:
         clean_df = clean_df.iloc[:-1]
+    
+    # Validation 3: Minimum sample check for LSTM
+    min_required = cloud_config.LOOKBACK_DAYS + cloud_config.FORECAST_DAYS + 10
+    if len(clean_df) < min_required:
+        print(f"WARNING: Dataset too small ({len(clean_df)} rows). LSTM requires at least {min_required}.")
     
     print(f"Dataset updated. Full: {full_df.shape}, Clean: {clean_df.shape}")
     

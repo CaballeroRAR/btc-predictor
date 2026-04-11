@@ -42,4 +42,4 @@ if __name__ == "__main__":
     # Example local test trigger
     repo_name = f"gcr.io/{cloud_config.PROJECT_ID}/btc-trainer"
     print(f"Launching Job for {repo_name}...")
-    # launch_vertex_ai_job(repo_name)
+    launch_vertex_ai_job(repo_name)

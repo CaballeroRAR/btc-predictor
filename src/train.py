@@ -41,7 +41,12 @@ def train_pipeline():
         df['Drift_Volatility'] = 0.0
     
     # 3. Scale Features
-    print(f"Final training matrix shape: {df.shape} ({list(df.columns)})")
+    print(f"Final training matrix shape: {df.shape}")
+    print(f"Schema Verification: {list(df.columns)}")
+    
+    if df.empty:
+        raise ValueError("FATAL: Training dataframe is empty. Cannot proceed with fit_transform.")
+
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(df.values)
     
