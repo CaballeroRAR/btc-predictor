@@ -167,10 +167,10 @@ if model and scaler and not full_df.empty:
                 st.write("No active training jobs found in scanned regions.")
 
             st.markdown("### Asset Management")
-            if st.button("🔄 Sync/Update Model from Cloud Storage", width='stretch', help="Pull the latest .h5 and .pkl files from GCS. Use this once your Vertex Job is SUCCEEDED."):
+            if st.button("Synchronize Model Assets", width='stretch', help="Pull the latest .h5 and .pkl files from GCS. Use this once your Vertex Job is COMPLETED."):
                 with st.spinner("Downloading assets from GCS..."):
                     lifecycle.force_sync_from_gcs(check_exists=False)
-                    st.success("Model assets updated! Refreshing analytical core...")
+                    st.success("Model assets synchronized. Analytical core updated.")
                     st.rerun()
 
             st.divider()
@@ -374,14 +374,14 @@ if model and scaler and not full_df.empty:
                                 inv_mgr.delete_investment(inv['id'])
                                 st.rerun()
     
-    # Infrastructure HUD
+    # Infrastructure Audit
     st.divider()
-    with st.expander("System Infrastructure Status (Admin Only)"):
+    with st.expander("Analytical Infrastructure Inventory"):
         sys_col1, sys_col2, sys_col3 = st.columns(3)
         sys_col1.write(f"**GCP Project:** `{cloud_config.PROJECT_ID}`")
-        sys_col2.write(f"**Target Region:** `{cloud_config.REGION}`")
-        sys_col3.write(f"**Model Context:** `LOCAL_LSTM_V1`")
-        st.caption("Verify this Project ID matches your Google Cloud URL to ensure you are viewing the correct console.")
+        sys_col2.write(f"**Computation Region:** `{cloud_config.REGION}`")
+        sys_col3.write(f"**Model Context:** `LOCAL_LSTM_V2`")
+        st.caption("Verify environment alignment by cross-referencing this Project ID with your Google Cloud Console URL.")
 
     st.divider()
     dv = base_res.get('avg_drift', 0.0)
