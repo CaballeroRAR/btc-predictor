@@ -83,8 +83,11 @@ def train_pipeline():
     
     print(f"Training complete. Model saved to {cloud_config.MODEL_PATH}")
     
-    # Upload to GCS if in cloud environment
-    if os.environ.get("GCP_PROJECT"):
+    # 5. Cloud Integration: Check for Vertex AI or GCP Environment
+    is_cloud = os.environ.get("AIP_MODEL_DIR") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID")
+    
+    if is_cloud:
+        print(f"Cloud environment detected (AIP_MODEL_DIR={os.environ.get('AIP_MODEL_DIR')}). Starting GCS upload...")
         from google.cloud import storage
         client = storage.Client()
         bucket = client.bucket(cloud_config.BUCKET_NAME)

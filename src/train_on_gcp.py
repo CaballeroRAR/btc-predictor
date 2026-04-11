@@ -21,20 +21,24 @@ def launch_vertex_ai_job(image_uri):
     # Resource Configuration
     machine_type = cloud_config.MACHINE_TYPE
     accelerator_type = cloud_config.ACCELERATOR_TYPE
-    accelerator_count = 1
+    accelerator_count = cloud_config.ACCELERATOR_COUNT
     
     # Run the job using the SPOT provisioning model
-    job.run(
-        args=[],
-        replica_count=1,
-        machine_type=machine_type,
-        accelerator_type=accelerator_type,
-        accelerator_count=accelerator_count,
-        # THIS IS THE KEY TO 90% COST SAVINGS
-        boot_disk_type="pd-standard",
-        boot_disk_size_gb=100,
-        sync=False # Don't block the dashboard, Vertex AI will send status via GCP Console
-    )
+    run_kwargs = {
+        "args": [],
+        "replica_count": 1,
+        "machine_type": machine_type,
+        "boot_disk_type": "pd-standard",
+        "boot_disk_size_gb": 100,
+        "sync": False # Don't block the dashboard
+    }
+    
+    # Only pass accelerator settings if they are actually being used
+    if accelerator_type and accelerator_count > 0:
+        run_kwargs["accelerator_type"] = accelerator_type
+        run_kwargs["accelerator_count"] = accelerator_count
+        
+    job.run(**run_kwargs)
     
     return job
 

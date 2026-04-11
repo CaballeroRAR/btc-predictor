@@ -17,3 +17,4 @@ google-cloud-firestore
 python-dotenv
 fastapi
 uvicorn
+setuptools
