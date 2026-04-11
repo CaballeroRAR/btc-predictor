@@ -26,8 +26,8 @@ RSS_FEEDS = [
 
 # Vertex AI Training Config
 MACHINE_TYPE = "n1-standard-4"
-ACCELERATOR_TYPE = "NVIDIA_TESLA_T4"
-ACCELERATOR_COUNT = 1
+ACCELERATOR_TYPE = None  # Disabled to bypass T4 GPU quota limits
+ACCELERATOR_COUNT = 0
 TRAINING_IMAGE_URI = "gcr.io/btc-predictor-492515/btc-trainer"
 
 def get_storage_path(filename, folder=DATA_DIR):

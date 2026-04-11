@@ -40,14 +40,17 @@ def trigger_training_job(service_account=None):
     print(f"   - Service Account: {sa_email or 'Default ADC Asset'}")
 
     # Define the Custom Job
+    machine_spec = {
+        "machine_type": cloud_config.MACHINE_TYPE,
+    }
+    if cloud_config.ACCELERATOR_TYPE:
+        machine_spec["accelerator_type"] = cloud_config.ACCELERATOR_TYPE
+        machine_spec["accelerator_count"] = cloud_config.ACCELERATOR_COUNT
+
     job = aiplatform.CustomJob(
         display_name=display_name,
         worker_pool_specs=[{
-            "machine_spec": {
-                "machine_type": cloud_config.MACHINE_TYPE,
-                "accelerator_type": cloud_config.ACCELERATOR_TYPE,
-                "accelerator_count": cloud_config.ACCELERATOR_COUNT,
-            },
+            "machine_spec": machine_spec,
             "replica_count": 1,
             "container_spec": {
                 "image_uri": cloud_config.TRAINING_IMAGE_URI,
