@@ -33,7 +33,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Trainer."; exit $LASTEX
 
 # 3. Build Dashboard Application
 Write-Host "`n[3/4] Submitting Dashboard App build..." -ForegroundColor Yellow
-gcloud builds submit --config infra/app.yaml . --project $PROJECT_ID
+gcloud builds submit --config infra/dashboard.yaml . --project $PROJECT_ID
 if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Dashboard."; exit $LASTEXITCODE }
 
 # 4. Deploy to Cloud Run

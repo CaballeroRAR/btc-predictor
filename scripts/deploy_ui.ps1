@@ -9,7 +9,7 @@ gcloud config set project $ProjectId
 Write-Host "Step 1: Building and Deploying Dashboard (Industrial Profile)..." -ForegroundColor Cyan
 
 # A. Build the dashboard image using the specific YAML config
-gcloud builds submit --config cloudbuild.dashboard.yaml .
+gcloud builds submit --config infra/dashboard.yaml .
 
 # B. Deploy the dashboard image
 gcloud run deploy $ServiceName `
