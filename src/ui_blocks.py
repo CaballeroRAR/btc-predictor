@@ -155,16 +155,16 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
         hist_preds = history_df[history_df['forecast_date'].dt.date < today_date].copy()
         hist_preds_grouped = hist_preds.groupby(hist_preds['forecast_date'].dt.date)['predicted_price'].mean()
     else:
-        hist_preds_grouped = pd.Series()
+        hist_preds_grouped = pd.Series(dtype=float)
 
     # Create the unified historical evaluation dataframe
     eval_df = pd.DataFrame(index=hist_actuals.index.date)
     eval_df['actual_price'] = hist_actuals['Close'].values
-    eval_df['predicted_price'] = hist_preds_grouped
-    eval_df = eval_df.dropna(subset=['predicted_price']) # Only show days we actually predicted
+    # Map predictions to the dates we have actuals for
+    eval_df['predicted_price'] = eval_df.index.map(hist_preds_grouped)
     
     if eval_df.empty:
-        st.info("Historical prediction matches are pending. Run simulation to begin tracking.")
+        st.info("Market feed history is initializing...")
     # --- 2. LIVE DATA PREPARATION (Today) ---
     live_price = full_df['Close'].iloc[-1]
     # In live_res, dates[0] is Today's prediction
@@ -175,26 +175,31 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
 
     # LAYER 1: HISTORICAL AUDIT (Static Lines)
     if not eval_df.empty:
+        # Calculate error only where we have both prices
         eval_df['error_pct'] = ((eval_df['predicted_price'] / eval_df['actual_price']) - 1) * 100
         
+        # Always plot the Actual Market Line
         fig.add_trace(go.Scatter(
             x=eval_df.index, y=eval_df['actual_price'],
             mode='lines+markers', name='Historical Actual',
             line=dict(color='#00ff00', width=2)
         ), secondary_y=False)
 
-        fig.add_trace(go.Scatter(
-            x=eval_df.index, y=eval_df['predicted_price'],
-            mode='lines+markers', name='Historical Mean Pred',
-            line=dict(color='#ff9900', width=1, dash='dot')
-        ), secondary_y=False)
+        # Plot Predicted Mean only where it exists
+        clean_preds = eval_df.dropna(subset=['predicted_price'])
+        if not clean_preds.empty:
+            fig.add_trace(go.Scatter(
+                x=clean_preds.index, y=clean_preds['predicted_price'],
+                mode='lines+markers', name='Historical Mean Pred',
+                line=dict(color='#ff9900', width=1, dash='dot')
+            ), secondary_y=False)
 
-        fig.add_trace(go.Bar(
-            x=eval_df.index, y=eval_df['error_pct'],
-            name='Historical Error %',
-            marker_color='rgba(255, 255, 255, 0.1)',
-            hovertemplate='%{y:.2f}% Error<extra></extra>'
-        ), secondary_y=True)
+            fig.add_trace(go.Bar(
+                x=clean_preds.index, y=clean_preds['error_pct'],
+                name='Historical Error %',
+                marker_color='rgba(255, 255, 255, 0.1)',
+                hovertemplate='%{y:.2f}% Error<extra></extra>'
+            ), secondary_y=True)
 
     # LAYER 2: TACTICAL MONITOR (Live Pulsar for Today)
     # 1. Today's Market Price (Static Dot)
@@ -204,8 +209,19 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
         marker=dict(color='#00ff00', size=10, symbol='circle')
     ), secondary_y=False)
 
-    # 2. Today's Prediction (Pulsating Dot)
+    # 2. Today's Prediction (Pulsating Dot) & Live Deviation
     if live_pred:
+        # Calculate Live Deviation %
+        live_error_pct = ((live_pred / live_price) - 1) * 100
+        
+        # Add bar for today's live deviation
+        fig.add_trace(go.Bar(
+            x=[today_date], y=[live_error_pct],
+            name='Live Deviation %',
+            marker_color='rgba(0, 255, 255, 0.3)',
+            hovertemplate='Live: %{y:.2f}% Error<extra></extra>'
+        ), secondary_y=True)
+
         # Outer Halo (Pulsar effect)
         fig.add_trace(go.Scatter(
             x=[today_date], y=[live_pred],
@@ -226,20 +242,34 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
-    fig.update_yaxes(title_text="Price (USD)", secondary_y=False, showgrid=False)
-    fig.update_yaxes(title_text="Deviation (%)", secondary_y=True, showgrid=False, zerolinecolor='white')
+    # Grid and Axis Hygiene
+    grid_style = dict(showgrid=True, gridcolor='rgba(255, 255, 255, 0.15)')
+    fig.update_xaxes(**grid_style)
+    fig.update_yaxes(title_text="Price (USD)", secondary_y=False, **grid_style)
+    fig.update_yaxes(
+        title_text="Deviation (%)", 
+        secondary_y=True, 
+        showgrid=False, 
+        zeroline=True,
+        zerolinecolor='rgba(255, 255, 255, 0.5)', 
+        zerolinewidth=1,
+        # Symmetrical centering for stable origin reference
+        range=[-15, 15] 
+    )
 
     st.plotly_chart(fig, use_container_width=True)
 
     # Percentage Difference Stats Row
-    st.write("**Daily Deviation Audit**")
-    cols = st.columns(len(eval_df) if not eval_df.empty else 1)
-    for i, (_, row) in enumerate(eval_df.iterrows()):
-        cols[i].metric(
-            row['forecast_date'].strftime('%m-%d'), 
-            f"{row['error_pct']:+.1f}%",
-            help=f"Actual: ${row['actual_price']:,.0f}\nPredicted: ${row['predicted_price']:,.0f}"
-        )
+    audit_df = eval_df.dropna(subset=['predicted_price'])
+    if not audit_df.empty:
+        st.write("**Daily Deviation Audit**")
+        cols = st.columns(len(audit_df))
+        for i, (date_idx, row) in enumerate(audit_df.iterrows()):
+            cols[i].metric(
+                date_idx.strftime('%m-%d'), 
+                f"{row['error_pct']:+.1f}%",
+                help=f"Actual: ${row['actual_price']:,.0f}\nPredicted: ${row['predicted_price']:,.0f}"
+            )
 
     # --- Distribution Drill-Down Section ---
     st.divider()
