@@ -47,6 +47,7 @@ gcloud run deploy $ServiceName `
     --platform managed `
     --no-allow-unauthenticated `
     --service-account $SaEmail `
+    --memory 2Gi `
     --set-env-vars PROJECT_ID=$ProjectId,SERVICE_ACCOUNT=$SaEmail,BUCKET_NAME=$ModelsBucket `
     --quiet
 
