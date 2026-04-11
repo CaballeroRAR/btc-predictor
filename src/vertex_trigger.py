@@ -56,16 +56,17 @@ def trigger_training_job(service_account=None):
     )
     
     # Run the job
-    print(f"[{datetime.now()}] [GCP] Submitting job to Vertex AI (Waiting for resource ID)...")
+    print(f"[{datetime.now()}] [GCP] Submitting job to Vertex AI (Using submit())...")
     
     try:
-        # We use the internal _gca_resource to monitor creation if needed, 
-        # but calling run() is standard. We just need to wait a tiny bit for the ID.
-        job.run(sync=False, service_account=sa_email)
+        # job.submit() returns the job object after the create RPC is sent.
+        # This is more robust than run(sync=False) in streamlit threads.
+        job.submit(service_account=sa_email)
         
         # 2. Wait for Resource ID Confirmation (Max 15s)
         import time
         for i in range(15):
+            # Check if metadata is populated
             if hasattr(job, "resource_name") and job.resource_name:
                 job_id = job.resource_name.split('/')[-1]
                 console_url = f"https://console.cloud.google.com/vertex-ai/locations/{cloud_config.REGION}/training/{job_id}?project={cloud_config.PROJECT_ID}"
@@ -78,6 +79,7 @@ def trigger_training_job(service_account=None):
         print(f"[{datetime.now()}] [WARNING] Job submitted but ID not received yet. Check console manually.")
     except Exception as e:
         print(f"[{datetime.now()}] [ERROR] GCP Submission Rejected: {str(e)}")
+        # If it says 'Project not found' or permissions, it will be clear here
         raise RuntimeError(f"GCP Submission Rejected: {str(e)}")
 
     return job

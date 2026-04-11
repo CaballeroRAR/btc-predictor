@@ -245,6 +245,7 @@ if model and scaler and not full_df.empty:
             
             from forecasting_engine import calculate_withdrawal_date
 
+            latest_price_val = base_res.get('last_price', 0.0)
             for inv in reversed(invests):
                 roi = ((latest_price_val / inv['price']) - 1) * 100
                 target_price = inv['price'] * (1 + inv.get('profit_target', 2.0)/100)
