@@ -41,8 +41,12 @@ gcloud projects add-iam-policy-binding $ProjectId --member="serviceAccount:$SaEm
 gcloud projects add-iam-policy-binding $ProjectId --member="serviceAccount:$SaEmail" --role="roles/run.invoker" --quiet
 
 Write-Host "Step 3: Building and Deploying Secure Dockerized Worker..." -ForegroundColor Cyan
+# A. Build the worker image using the specific YAML config
+gcloud builds submit --config cloudbuild.worker.yaml .
+
+# B. Deploy the worker image
 gcloud run deploy $ServiceName `
-    --source . `
+    --image gcr.io/$ProjectId/$ServiceName `
     --region $Region `
     --platform managed `
     --no-allow-unauthenticated `
