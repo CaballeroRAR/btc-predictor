@@ -28,6 +28,7 @@ RSS_FEEDS = [
 MACHINE_TYPE = "n1-standard-4"
 ACCELERATOR_TYPE = "NVIDIA_TESLA_T4"
 ACCELERATOR_COUNT = 1
+TRAINING_IMAGE_URI = "gcr.io/btc-predictor-492515/btc-trainer"
 
 def get_storage_path(filename, folder=DATA_DIR):
     """Utility to format GCS paths."""

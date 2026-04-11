@@ -138,18 +138,26 @@ def prepare_merged_dataset(force_refresh=False):
 
     print(f"Fetching incremental data since {start_date.date()}...")
     
-    # 1. Fetch Price Delta
-    new_price_df = fetch_btc_data(start_date=start_date)
-    
-    # 2. Fetch Sentiment Delta
-    all_sentiment_df = fetch_sentiment_data()
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # 1. Start parallel fetch tasks
+        price_task = executor.submit(fetch_btc_data, start_date=start_date)
+        sentiment_task = executor.submit(fetch_sentiment_data)
+        news_task = executor.submit(fetch_rss_sentiment)
+        
+        # 2. Gather results
+        new_price_df = price_task.result()
+        all_sentiment_df = sentiment_task.result()
+        news_val = news_task.result()
+
+    # 3. Filter Sentiment Delta
     new_sentiment_df = all_sentiment_df[all_sentiment_df.index >= start_date]
     
-    # 3. Join Price and Sentiment Delta
+    # 4. Join Price and Sentiment Delta
     new_merged_df = new_price_df.join(new_sentiment_df, how='left')
     
-    # 4. News Sentiment (Replaces Google Trends baseline to maintain 12-feature schema)
-    news_val = fetch_rss_sentiment()
+    # 5. News Sentiment (already fetched in parallel)
     new_merged_df['News_Sentiment'] = news_val
     
     # Combine with existing

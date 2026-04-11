@@ -48,18 +48,18 @@ def load_assets():
         return None, None
 
 def get_model_info():
-    """Returns model age in days and training timestamp."""
+    """Returns model age in days and training timestamp based on last modification."""
     if not os.path.exists(cloud_config.MODEL_PATH):
         return None, None
     
-    # Get creation time
-    ctime = os.path.getctime(cloud_config.MODEL_PATH)
-    dt_trained = datetime.fromtimestamp(ctime)
+    # Use modification time as it updates when the model is replaced/overwritten
+    mtime = os.path.getmtime(cloud_config.MODEL_PATH)
+    dt_updated = datetime.fromtimestamp(mtime)
     
-    # Date-based age (e.g., trained yesterday = 1 day old)
-    age_days = (datetime.now().date() - dt_trained.date()).days
+    # Date-based age (e.g., updated today = 0 days old)
+    age_days = (datetime.now().date() - dt_updated.date()).days
     
-    return age_days, dt_trained
+    return age_days, dt_updated
 
 def save_calibration_state(drift_val, price):
     """Saves the calculated drift and the price it was based on."""

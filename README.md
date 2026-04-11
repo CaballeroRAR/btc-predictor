@@ -103,7 +103,7 @@ The system integrates 12 distinct signals to capture market "Gravity":
 The application has been refactored into a **Three-Tier Architecture** for scalability:
 - **`forecasting_engine.py`**: The "Inference Engine." Handles MC Dropout, backtesting, and the new **Signal Attribution** math.
 - **`ui_blocks.py`**: The "Presentation Layer." Modularized Streamlit components and Plotly visualization logic.
-- **`drift_analysis.py`**: The "Orchestrator." Manages application lifecycle, session state, and user interaction flow.
+- **`dashboard.py`**: The "Orchestrator." Manages application lifecycle, session state, and user interaction flow.
 
 ### 4. Advanced Evaluation: Signal Attribution & Calibration
 - **Signal Attribution Breakdown**: Using **Feature Ablation**, the model identifies the "appropriate weight" of factor groups. By replacing specific signals (Gravity, Network, or Psychology) with their 60-day mean, the engine quantifies their exact USD impact on the forecast.

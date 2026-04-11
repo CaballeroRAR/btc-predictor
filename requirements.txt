@@ -13,3 +13,6 @@ plotly
 google-cloud-aiplatform
 feedparser
 vaderSentiment
+google-cloud-firestore
+google-cloud-aiplatform
+python-dotenv

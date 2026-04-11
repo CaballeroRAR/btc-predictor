@@ -1,28 +1,17 @@
-import json
 import os
-import pandas as pd
 from datetime import datetime
+from database import DatabaseManager
 
-INVESTMENTS_FILE = "data/investments.json"
+# Initialize Database Manager
+db_manager = DatabaseManager()
 
 def load_investments():
-    """
-    Load the investment journal from a local JSON file.
-    
-    Returns:
-        list: A list of investment dictionaries. Returns an empty list if file not found.
-    """
-    if not os.path.exists(INVESTMENTS_FILE):
-        return []
-    try:
-        with open(INVESTMENTS_FILE, 'r') as f:
-            return json.load(f)
-    except Exception:
-        return []
+    """Load the investment journal from Firestore."""
+    return db_manager.get_investments()
 
 def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, original_withdrawal_date=None, note=""):
     """
-    Append a new investment entry to the journal with a forecast snapshot.
+    Append a new investment entry to the journal using Firestore.
     
     Args:
         amount (float): Investment amount in USD.
@@ -39,9 +28,7 @@ def save_investment(amount, date, price, forecast_prices=None, calibrated_prices
     Returns:
         dict: The newly created investment record.
     """
-    investments = load_investments()
-    
-    # Convert numpy arrays to lists for JSON serialization
+    # Convert numpy arrays to lists for Firestore serialization
     fp = forecast_prices.tolist() if hasattr(forecast_prices, "tolist") else (forecast_prices or [])
     cp = calibrated_prices.tolist() if hasattr(calibrated_prices, "tolist") else (calibrated_prices or [])
     sd = std.tolist() if hasattr(std, "tolist") else (std or [])
@@ -62,15 +49,9 @@ def save_investment(amount, date, price, forecast_prices=None, calibrated_prices
         "timestamp": str(datetime.now())
     }
     
-    investments.append(new_inv)
-    os.makedirs(os.path.dirname(INVESTMENTS_FILE), exist_ok=True)
-    with open(INVESTMENTS_FILE, 'w') as f:
-        json.dump(investments, f, indent=4)
+    db_manager.save_investment(new_inv)
     return new_inv
 
 def delete_investment(inv_id):
-    """Remove an investment by ID."""
-    investments = load_investments()
-    investments = [inv for inv in investments if inv['id'] != inv_id]
-    with open(INVESTMENTS_FILE, 'w') as f:
-        json.dump(investments, f, indent=4)
+    """Remove an investment by ID from Firestore."""
+    db_manager.delete_investment(inv_id)
