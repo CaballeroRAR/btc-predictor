@@ -184,12 +184,13 @@ if model and scaler and not full_df.empty:
     if 'active_tab' not in st.session_state:
         st.session_state['active_tab'] = tabs[0]
         
+    latest_price_val = full_df['Close'].iloc[-1]
+    latest_date_val = full_df.index[-1]
+    
     active_tab = st.radio("Navigation", tabs, index=tabs.index(st.session_state['active_tab']), horizontal=True, label_visibility="collapsed")
     st.session_state['active_tab'] = active_tab
     
     if active_tab == "Market Analysis":
-        latest_price_val = full_df['Close'].iloc[-1]
-        latest_date_val = full_df.index[-1]
         res = st.session_state['base_forecast']
         
         ui.render_market_summary_metrics(latest_price_val, latest_date_val, float(res['prices'][0]), res['dates'][0].strftime('%Y-%m-%d'))
@@ -223,7 +224,7 @@ if model and scaler and not full_df.empty:
             import io
             ui.render_signal_attribution_analysis(pd.read_json(io.StringIO(res['impact_df_json'])))
 
-    with tab2:
+    else: # Investment Journal
         st.subheader("Investment Journal")
         invests = inv_mgr.load_investments()
         if not invests:
