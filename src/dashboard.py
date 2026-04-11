@@ -35,7 +35,7 @@ def check_password():
         st.title("BTC Predictor Tool")
         with st.form("login"):
             password_input = st.text_input("Enter Dashboard Password", type="password")
-            if st.form_submit_button("Login", use_container_width=True):
+            if st.form_submit_button("Login", width='stretch'):
                 if password_input == PASSWORD:
                     st.session_state["authenticated"] = True
                     st.rerun()
@@ -51,11 +51,11 @@ if not check_password():
 
 # --- INITIALIZATION ---
 db_mgr = DatabaseManager()
-model, scaler = lifecycle.load_assets()
+model, scaler = lifecycle.get_active_model()
 
 # Sidebar: Force Refresh
 st.sidebar.header("Global Controls")
-force_refresh = st.sidebar.button("Force Market Refresh", use_container_width=True)
+force_refresh = st.sidebar.button("Force Market Refresh", width='stretch')
 
 if force_refresh:
     st.cache_data.clear()
@@ -110,11 +110,11 @@ if model and scaler and not full_df.empty:
             st.session_state['results'] = logic.calculate_withdrawal_plan(base_res, auto_price, profit_target, investment)
             st.session_state['plan_triggered'] = False
 
-        if st.button("Run Simulation", use_container_width=True):
+        if st.button("Run Simulation", width='stretch'):
             st.session_state['results'] = logic.calculate_withdrawal_plan(base_res, entry_price, profit_target, investment)
             st.session_state['plan_triggered'] = True
         
-        if st.button("Save this Simulation", use_container_width=True):
+        if st.button("Save this Simulation", width='stretch'):
             r = st.session_state['results']
             inv_mgr.save_investment(
                 amount=r['investment'], date=selected_date, price=r['entry_price'], 
@@ -143,8 +143,9 @@ if model and scaler and not full_df.empty:
             current_drift = base_res.get('avg_drift', 0.0)
             st.write(f"**Drift:** {current_drift:+.2f} pts")
             
-            if st.button("Recalibrate Market Alignment", use_container_width=True):
+            if st.button("Recalibrate Market Alignment", width='stretch'):
                 st.session_state['base_forecast'] = logic.get_base_forecast(db_mgr, model, scaler, clean_df, force=True)
+                st.session_state['active_tab'] = "Investment Journal"
                 st.rerun()
 
         st.divider()
@@ -158,7 +159,7 @@ if model and scaler and not full_df.empty:
                 job = active_jobs[0]
                 status_txt = vertex.get_status_summary(job)
                 st.info(status_txt)
-                if st.button("Refresh Job Status", use_container_width=True):
+                if st.button("Refresh Job Status", width='stretch'):
                     st.rerun()
             else:
                 st.write("No active training jobs found.")
@@ -169,7 +170,7 @@ if model and scaler and not full_df.empty:
             st.warning("Launching a new training job will provision a GCP compute instance. This will incur cloud costs.")
             
             confirm_training = st.checkbox("Confirm Cloud Training Trigger")
-            if st.button("Launch Vertex AI Model Training", disabled=not confirm_training, use_container_width=True):
+            if st.button("Launch Vertex AI Model Training", disabled=not confirm_training, width='stretch'):
                 with st.spinner("Provisioning Vertex AI CustomJob..."):
                     try:
                         new_job = vertex.trigger_training_job()
@@ -178,10 +179,15 @@ if model and scaler and not full_df.empty:
                     except Exception as e:
                         st.error(f"Failed to launch job: {str(e)}")
 
-    # 6. Main Visualizations
-    tab1, tab2 = st.tabs(["Market Analysis", "Investment Journal"])
+    # 6. Main Visualizations (Persistent Navigation)
+    tabs = ["Market Analysis", "Investment Journal"]
+    if 'active_tab' not in st.session_state:
+        st.session_state['active_tab'] = tabs[0]
+        
+    active_tab = st.radio("Navigation", tabs, index=tabs.index(st.session_state['active_tab']), horizontal=True, label_visibility="collapsed")
+    st.session_state['active_tab'] = active_tab
     
-    with tab1:
+    if active_tab == "Market Analysis":
         latest_price_val = full_df['Close'].iloc[-1]
         latest_date_val = full_df.index[-1]
         res = st.session_state['base_forecast']
@@ -207,7 +213,7 @@ if model and scaler and not full_df.empty:
                 fig.add_trace(go.Scatter(x=r['dates'], y=[r['target']]*len(r['dates']), name='Target', line=dict(color='red', dash='dash')))
         
         fig.update_layout(height=500, template="plotly_dark", paper_bgcolor='black', plot_bgcolor='black', margin=dict(l=0, r=0, t=20, b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         ui.render_prediction_evaluation_chart(pred_log.get_performance_stats(), full_df, res)
         
         # Signal Impact UI
@@ -239,30 +245,34 @@ if model and scaler and not full_df.empty:
                 
                 title = f"{inv['date']} | ROI: {roi:.1f}% | Entry: ${inv['price']:,.0f}"
                 with st.expander(title):
-                    col1, col2 = st.columns([1, 1])
+                    # --- PREMIUM METADATA GRID ---
+                    m1, m2, m3, m4 = st.columns(4)
+                    with m1: 
+                        st.caption("Capital Invested")
+                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${inv['amount']}</h3>", unsafe_allow_html=True)
+                    with m2: 
+                        st.caption("Target ROI (%)")
+                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>{inv.get('profit_target', 2.0)}%</h3>", unsafe_allow_html=True)
+                    with m3: 
+                        st.caption("Entry Price")
+                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${inv['price']:,.0f}</h3>", unsafe_allow_html=True)
+                    with m4: 
+                        st.caption("Target Exit Price")
+                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${target_price:,.0f}</h3>", unsafe_allow_html=True)
                     
-                    with col1:
-                        st.write(f"**Investment Amount:** ${inv['amount']}")
-                        st.write(f"**Target:** {inv.get('profit_target', 2.0)}% (${target_price:,.0f})")
-                        
-                        if st.button("Delete Record", key=f"del_{inv['id']}", use_container_width=True):
-                            inv_mgr.delete_investment(inv['id'])
-                            st.rerun()
-
-                    with col2:
-                        st.write(f"**Initial Projected Exit:** {original_exit.strftime('%Y-%m-%d') if original_exit else 'N/A'}")
+                    st.divider()
+                    
+                    # --- TEMPORAL AUDIT ---
+                    sub1, sub2 = st.columns(2)
+                    with sub1:
+                        st.caption("Initial Exit Projection")
+                        st.write(f"**{original_exit.strftime('%Y-%m-%d') if original_exit else 'N/A'}**")
+                    with sub2:
+                        st.caption("Current Live Projection")
                         if current_exit:
-                            st.write(f"**Current Predicted Exit:** {current_exit.strftime('%Y-%m-%d')}")
-                            if original_exit:
-                                diff = (current_exit - original_exit).days
-                                if diff > 0:
-                                    st.warning(f"Temporal Shift: +{diff} days (Retreating)")
-                                elif diff < 0:
-                                    st.success(f"Temporal Shift: {diff} days (Advancing)")
-                                else:
-                                    st.info("Temporal Shift: Stable")
+                            st.write(f"**{current_exit.strftime('%Y-%m-%d')}**")
                         else:
-                            st.error("Exit Target not reached in 30-day window.")
+                            st.write("Out of Window")
 
                     # --- Dual Line Chart with Shift Markers ---
                     if "forecast_prices" in inv and inv["forecast_prices"]:
@@ -272,26 +282,86 @@ if model and scaler and not full_df.empty:
                         
                         m_fig = go.Figure()
                         
-                        # Actual History since investment
-                        asince = full_df[full_df.index >= pd.to_datetime(inv['date'])]
+                        # Actual History since investment (Trimmed to last 15 days)
+                        asince = full_df[full_df.index >= pd.to_datetime(inv['date'])].tail(15)
                         if not asince.empty:
                             m_fig.add_trace(go.Scatter(x=asince.index, y=asince['Close'], name='Actual Price', line=dict(color='white', width=2)))
                         
-                        # Snapshot: Raw vs Calibrated
-                        m_fig.add_trace(go.Scatter(x=fd, y=raw_p, name='Base Model', line=dict(color='rgba(0, 255, 255, 0.4)', dash='dot', width=1)))
-                        m_fig.add_trace(go.Scatter(x=fd, y=cal_p, name='Market Aligned', line=dict(color='#00ff00', width=2)))
+                        # Snapshot: Raw vs Calibrated (Now "Market Prediction")
+                        m_fig.add_trace(go.Scatter(x=fd, y=cal_p, name='Market Prediction', mode='lines+markers', line=dict(color='#00ffff', width=2), marker=dict(size=6)))
+                        
+                        # --- LIVE OVERLAY (The Fix) ---
+                        # Overlay the current global forecast dates/prices onto this investment's chart
+                        m_fig.add_trace(go.Scatter(
+                            x=current_f_dates, 
+                            y=current_f_prices, 
+                            name='Live Global Forecast', 
+                            mode='lines', 
+                            line=dict(color='#00ffff', width=1, dash='dot')
+                        ))
                         
                         # Target Line
                         m_fig.add_trace(go.Scatter(x=fd, y=[target_price]*len(fd), name='Target', line=dict(color='red', width=1, dash='dash')))
                         
                         # Exit Markers (Vertical Lines)
                         if original_exit:
-                            m_fig.add_vline(x=original_exit.timestamp() * 1000, line_width=2, line_dash="dash", line_color="orange", annotation_text="Initial Exit")
+                            x_val = original_exit.timestamp() * 1000
+                            m_fig.add_shape(
+                                type='line', x0=x_val, x1=x_val, y0=0, y1=0.5, yref='paper',
+                                line=dict(color='yellow', dash='dot', width=2)
+                            )
+                            m_fig.add_annotation(
+                                x=x_val, y=0.1, yref='paper', text="Initial Exit", 
+                                showarrow=False, font=dict(color='yellow', size=10), 
+                                textangle=-90, xanchor='left', xshift=10
+                            )
                         if current_exit:
-                            m_fig.add_vline(x=current_exit.timestamp() * 1000, line_width=2, line_dash="solid", line_color="#00ff00", annotation_text="Current Exit")
+                            x_val = current_exit.timestamp() * 1000
+                            m_fig.add_shape(
+                                type='line', x0=x_val, x1=x_val, y0=0.5, y1=1, yref='paper',
+                                line=dict(color='#00ff00', dash='solid', width=2)
+                            )
+                            m_fig.add_annotation(
+                                x=x_val, y=0.9, yref='paper', text="Current Exit", 
+                                showarrow=False, font=dict(color='#00ffff', size=10), 
+                                textangle=-90, xanchor='left', xshift=10
+                            )
 
-                        m_fig.update_layout(height=300, template="plotly_dark", paper_bgcolor='black', plot_bgcolor='black', margin=dict(l=0, r=0, t=20, b=0))
-                        st.plotly_chart(m_fig, use_container_width=True)
+                        # Custom High-Res X-Axis with (+N) Days
+                        tick_vals = fd
+                        tick_text = [d.strftime('%a %d') for d in fd]
+                        
+                        m_fig.update_layout(
+                            height=300, 
+                            template="plotly_dark", 
+                            paper_bgcolor='black', 
+                            plot_bgcolor='black', 
+                            margin=dict(l=0, r=0, t=20, b=0),
+                            xaxis=dict(
+                                tickmode='array',
+                                tickvals=tick_vals,
+                                ticktext=tick_text,
+                                showgrid=True,
+                                gridcolor='rgba(255, 255, 255, 0.1)'
+                            )
+                        )
+                        st.plotly_chart(m_fig, width='stretch')
+                        
+                        # --- FOOTER: STATUS & RED ACTION ---
+                        footer_col1, footer_col2 = st.columns([2, 1])
+                        with footer_col1:
+                            if current_exit and original_exit:
+                                diff = (current_exit - original_exit).days
+                                status_msg = "Stable" if diff == 0 else (f"+{diff} days Retreating" if diff > 0 else f"{diff} days Advancing")
+                                st.caption(f"Temporal Shift: {status_msg}")
+                            elif not current_exit:
+                                st.caption("Temporal Shift: Out of Window")
+                        
+                        with footer_col2:
+                            st.markdown("<p style='color: #ff4b4b; font-size: 0.8em; text-align: right; margin-bottom: -5px;'>Destructive Action</p>", unsafe_allow_html=True)
+                            if st.button("Delete Record", key=f"del_{inv['id']}", width='stretch', type="secondary"):
+                                inv_mgr.delete_investment(inv['id'])
+                                st.rerun()
     
     st.divider()
     dv = base_res.get('avg_drift', 0.0)

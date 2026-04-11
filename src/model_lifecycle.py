@@ -10,42 +10,49 @@ import cloud_config as cloud_config
 CALIBRATION_FILE = "data/calibration_state.json"
 
 @st.cache_resource
-def load_assets():
-    """Download from GCS if missing, then load model and scaler into memory."""
+def get_active_model():
+    """Download from GCS if missing, then load model and scaler into memory. Context-aware."""
     os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
 
-    # 1. Sync from GCS if local is missing (Cloud Run Cold Start)
+    # 1. Sync from GCS if local is missing
     if not os.path.exists(cloud_config.MODEL_PATH) or not os.path.exists(cloud_config.SCALER_PATH):
-        with st.status("Syncing model from Google Cloud Storage...", expanded=True) as status:
-            try:
-                client = storage.Client()
-                bucket = client.bucket(cloud_config.BUCKET_NAME)
-                
-                # Download Model
-                if not os.path.exists(cloud_config.MODEL_PATH):
-                    st.write("Downloading model...")
-                    blob = bucket.blob(f"{cloud_config.MODEL_DIR}/btc_lstm_model.h5")
-                    blob.download_to_filename(cloud_config.MODEL_PATH)
-                
-                # Download Scaler
-                if not os.path.exists(cloud_config.SCALER_PATH):
-                    st.write("Downloading scaler...")
-                    blob = bucket.blob(f"{cloud_config.MODEL_DIR}/scaler.pkl")
-                    blob.download_to_filename(cloud_config.SCALER_PATH)
-                
-                status.update(label="Sync Complete!", state="complete", expanded=False)
-            except Exception as e:
-                status.update(label="Sync Failed!", state="error", expanded=True)
-                raise RuntimeError(f"Could not retrieve model from GCS: {str(e)}")
-    
+        import sys
+        is_streamlit = "streamlit" in sys.modules
+        
+        if is_streamlit:
+            with st.status("Syncing model from Google Cloud Storage...", expanded=True) as status:
+                try:
+                    _perform_sync()
+                    status.update(label="Sync Complete!", state="complete", expanded=False)
+                except Exception as e:
+                    status.update(label="Sync Failed!", state="error", expanded=True)
+                    raise RuntimeError(f"Could not retrieve model from GCS: {str(e)}")
+        else:
+            print(f"[{datetime.now()}] [SYSTEM] Headless Sync: Downloading assets...")
+            _perform_sync()
+
     # 2. Final Load
     try:
         model = keras.models.load_model(cloud_config.MODEL_PATH, compile=False)
         scaler = joblib.load(cloud_config.SCALER_PATH)
         return model, scaler
     except Exception as e:
-        st.error(f"Error loading model files: {str(e)}")
+        if "streamlit" in sys.modules:
+            st.error(f"Error loading model files: {str(e)}")
+        else:
+            print(f"[{datetime.now()}] [ERROR] Model load failure: {str(e)}")
         return None, None
+
+def _perform_sync():
+    """Internal helper for GCS downloads."""
+    client = storage.Client()
+    bucket = client.bucket(cloud_config.BUCKET_NAME)
+    if not os.path.exists(cloud_config.MODEL_PATH):
+        blob = bucket.blob(f"{cloud_config.MODEL_DIR}/btc_lstm_model.h5")
+        blob.download_to_filename(cloud_config.MODEL_PATH)
+    if not os.path.exists(cloud_config.SCALER_PATH):
+        blob = bucket.blob(f"{cloud_config.MODEL_DIR}/scaler.pkl")
+        blob.download_to_filename(cloud_config.SCALER_PATH)
 
 def get_model_info():
     """Returns model age in days and training timestamp based on last modification."""
@@ -93,3 +100,6 @@ def load_calibration_state():
             return state
     except:
         return {"drift_value": 0.0, "status": "Error Loading State"}
+
+# --- Aliases for Backward Compatibility ---
+

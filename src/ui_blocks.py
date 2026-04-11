@@ -62,7 +62,7 @@ def render_signal_attribution_analysis(impact_df):
                 margin=dict(l=0, r=0, t=40, b=0),
                 yaxis={'categoryorder':'total ascending'}
             )
-            st.plotly_chart(fig_impact, use_container_width=True)
+            st.plotly_chart(fig_impact, width='stretch')
         
         with col_text:
             st.write("**Evaluation Summary:**")
@@ -260,7 +260,7 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
         range=[-15, 15] 
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # TACTICAL HUD: Real-time drift stat (Lower side, Right oriented)
     if live_pred:
@@ -302,27 +302,45 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
         st.info("No audited dates (Today-1 or older) available for statistical drill-down yet.")
         return
 
-    selected_audit_date = st.selectbox(
-        "Select Historical Date to Audit Prediction Multiplicity",
-        options=audit_dates,
-        format_func=lambda x: x.strftime('%Y-%m-%d')
+    selected_audit_date = st.date_input(
+        "Select Date to Audit Prediction Multiplicity",
+        value=today_date,
+        max_value=today_date,
+        help="Select 'Today' to audit the active simulation session. Select past dates for historical accuracy."
     )
 
     if selected_audit_date:
-        # Filter all historical predictions for that specific day
-        # (Compare against date objects in history_df)
-        dist_df = history_df[history_df['forecast_date'].dt.date == selected_audit_date].copy()
+        # --- DATA DIVERSION: LIVE vs HISTORICAL ---
+        is_today = (selected_audit_date == today_date)
+        
+        if is_today:
+            # Audit the active session results
+            if live_res and 'prices' in live_res:
+                dist_df = pd.DataFrame({'predicted_price': live_res['prices']})
+                actual_val = full_df['Close'].iloc[-1]
+                marker_label = f"Live Price: ${actual_val:,.0f}"
+                marker_color = "#00ffff" # Cyan for Live
+            else:
+                st.info("No active simulation results for Today yet. Run a recalibration first.")
+                return
+        else:
+            # Pull from historical database
+            dist_df = history_df[history_df['forecast_date'].dt.date == selected_audit_date].copy()
+            if not dist_df.empty:
+                actual_for_day = dist_df['actual_price'].dropna().unique()
+                actual_val = actual_for_day[0] if len(actual_for_day) > 0 else None
+                marker_label = f"Actual Close: ${actual_val:,.0f}" if actual_val else None
+                marker_color = "#00ff00" # Green for Historical
+            else:
+                actual_val = None
         
         if not dist_df.empty:
-            actual_for_day = dist_df['actual_price'].dropna().unique()
-            actual_val = actual_for_day[0] if len(actual_for_day) > 0 else None
-            
             fig_dist = px.histogram(
                 dist_df, 
                 x="predicted_price", 
                 nbins=20,
-                title=f"Predicted Price Distribution for {selected_audit_date.strftime('%Y-%m-%d')}",
-                color_discrete_sequence=['#ff9900']
+                title=f"Prediction Distribution: {selected_audit_date.strftime('%Y-%m-%d')} {'(LIVE)' if is_today else '(HISTORICAL)'}",
+                color_discrete_sequence=['#00ffff' if is_today else '#ff9900']
             )
             
             if actual_val:
@@ -330,8 +348,8 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
                     x=actual_val, 
                     line_width=3, 
                     line_dash="dash", 
-                    line_color="#00ff00",
-                    annotation_text=f"Actual Close: ${actual_val:,.0f}"
+                    line_color=marker_color,
+                    annotation_text=marker_label
                 )
             
             fig_dist.update_layout(
@@ -342,5 +360,5 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
                 yaxis_title="Frequency",
                 bargap=0.1
             )
-            st.plotly_chart(fig_dist, use_container_width=True)
-            st.caption(f"Based on {len(dist_df)} distinct simulation points recorded for this date.")
+            st.plotly_chart(fig_dist, width='stretch')
+            st.caption(f"Based on {len(dist_df)} distinct simulation points.")

@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(__file__))
 import data_loader
 import dashboard_logic
 import vertex_trigger
+import model_lifecycle as lifecycle
 from database import DatabaseManager
 
 app = FastAPI(title="BTC Predictor Tactical Worker")
@@ -28,11 +29,18 @@ async def recalibrate():
     3. Logs results to the dedicated live_drift_audit table.
     """
     try:
-        # 1. Fetch Fresh Market Data
+        # 1. Fetch Fresh Market Data and Assets
         full_df, clean_df = data_loader.prepare_merged_dataset()
+        model, scaler = lifecycle.get_active_model()
         
         # 2. Trigger Headless Recalibration (SYSTEM source)
-        results = dashboard_logic.get_base_forecast(clean_df, full_df, source="SYSTEM")
+        results = dashboard_logic.get_base_forecast(
+            db_mgr=db_mgr, 
+            model=model, 
+            scaler=scaler, 
+            clean_df=clean_df, 
+            source="SYSTEM"
+        )
         
         return {
             "status": "success",

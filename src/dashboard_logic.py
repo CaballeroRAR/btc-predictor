@@ -7,7 +7,7 @@ import calibration as calib
 import model_lifecycle as lifecycle
 import cloud_config as cloud_config
 
-def get_base_forecast(db_mgr, model, scaler, clean_df, force=False):
+def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER"):
     """
     Standardized model forecasting service. 
     Handles Firestore snapshot caching and core analytical pipeline.
@@ -46,20 +46,29 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False):
     lifecycle.save_calibration_state(avg_drift, latest_price)
 
     # 3. Model & Feature Alignment
-    model, scaler = lifecycle.get_active_model()
-    
-    # Inject Drift Features for Closed-Loop Parity
+    # model and scaler are passed as arguments
     # For inference, we use the session's current drift as the 'Live' alignment
     clean_df['Drift_Alignment'] = avg_drift
     clean_df['Drift_Volatility'] = 0.0 # Intraday volatility is 0 for single-point inference
     
-    # Ensure column order matches training: exactly 14 features
+    # Ensure column order matches training: adapt to 12 or 14 features
     expected_cols = [
         'Open', 'High', 'Low', 'Close', 'Volume', 
         'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
         'Sentiment', 'News_Sentiment', 'Drift_Alignment', 'Drift_Volatility'
     ]
-    clean_df = clean_df[expected_cols]
+    
+    # --- DYNAMIC FEATURE BRIDGE ---
+    num_expected = scaler.n_features_in_
+    if num_expected == 12:
+        # Backward compatibility with legacy model assets
+        active_cols = expected_cols[:12]
+    else:
+        # Forward compatibility with newer 14-feature models
+        active_cols = expected_cols
+    
+    clean_df = clean_df[active_cols]
+
 
     # 4. Forecast Execution
     recent_data_raw = clean_df.tail(cloud_config.LOOKBACK_DAYS).copy()
