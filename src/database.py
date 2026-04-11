@@ -9,13 +9,34 @@ from dotenv import load_dotenv
 # Load local environment variables for manual migration script
 load_dotenv()
 
+COLLECTION_INVESTMENTS = "investments"
+COLLECTION_PREDICTIONS = "daily_predictions"
+COLLECTION_LIVE_DRIFT = "live_drift_audit"
+
 class DatabaseManager:
     def __init__(self):
         # Retrieve custom database ID if provided, otherwise fallback to (default)
         db_id = os.getenv("FIRESTORE_DATABASE", "(default)")
         self.db = firestore.Client(project=cloud_config.PROJECT_ID, database=db_id)
-        self.investments_col = "investments"
-        self.predictions_col = "daily_predictions"
+        self.investments_col = COLLECTION_INVESTMENTS
+        self.predictions_col = COLLECTION_PREDICTIONS
+        self.drift_col = COLLECTION_LIVE_DRIFT
+
+    def log_live_drift(self, forecast_date, prediction, market_price, drift_pct):
+        """Log high-frequency tactical drift snapshots to a dedicated collection."""
+        try:
+            doc_ref = self.db.collection(self.drift_col).document()
+            doc_ref.set({
+                'timestamp': firestore.SERVER_TIMESTAMP,
+                'forecast_date': forecast_date, 
+                'predicted_price': float(prediction),
+                'market_price': float(market_price),
+                'drift_pct': float(drift_pct)
+            })
+            return True
+        except Exception as e:
+            print(f"Error logging live drift: {str(e)}")
+            return False
 
     # --- Investments ---
     

@@ -81,6 +81,16 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False):
     }
     db_mgr.save_system_snapshot(res_to_save)
     
+    # 7.5 Log Live Drift Snapshot (Dedicated Tactical Collection)
+    live_price = clean_df['Close'].iloc[-1]
+    live_drift_val = ((mean[0] / live_price) - 1) * 100
+    db_mgr.log_live_drift(
+        forecast_date=forecast_dates[0].strftime('%Y-%m-%d'),
+        prediction=mean[0],
+        market_price=live_price,
+        drift_pct=live_drift_val
+    )
+    
     # 8. Return UI-ready results
     return {
         'is_cached': False,

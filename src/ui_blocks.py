@@ -178,11 +178,12 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
         # Calculate error only where we have both prices
         eval_df['error_pct'] = ((eval_df['predicted_price'] / eval_df['actual_price']) - 1) * 100
         
-        # Always plot the Actual Market Line
+        # Always plot the Actual Market Line (Grey with larger points)
         fig.add_trace(go.Scatter(
             x=eval_df.index, y=eval_df['actual_price'],
             mode='lines+markers', name='Historical Actual',
-            line=dict(color='#00ff00', width=2)
+            line=dict(color='rgba(255, 255, 255, 0.2)', width=1.5),
+            marker=dict(color='grey', size=10)
         ), secondary_y=False)
 
         # Plot Predicted Mean only where it exists
@@ -191,7 +192,8 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
             fig.add_trace(go.Scatter(
                 x=clean_preds.index, y=clean_preds['predicted_price'],
                 mode='lines+markers', name='Historical Mean Pred',
-                line=dict(color='#ff9900', width=1, dash='dot')
+                line=dict(color='#ff9900', width=1, dash='dot'),
+                marker=dict(size=6)
             ), secondary_y=False)
 
             fig.add_trace(go.Bar(
@@ -202,14 +204,14 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
             ), secondary_y=True)
 
     # LAYER 2: TACTICAL MONITOR (Live Pulsar for Today)
-    # 1. Today's Market Price (Static Dot)
+    # 1. Today's Market Price (Static Dot - 5% bigger than historical)
     fig.add_trace(go.Scatter(
         x=[today_date], y=[live_price],
         mode='markers', name='Live Price',
-        marker=dict(color='#00ff00', size=10, symbol='circle')
+        marker=dict(color='#00ff00', size=10.5, symbol='circle')
     ), secondary_y=False)
 
-    # 2. Today's Prediction (Pulsating Dot) & Live Deviation
+    # 2. Today's Prediction (Live Predicted Closing Price) & Live Deviation
     if live_pred:
         # Calculate Live Deviation %
         live_error_pct = ((live_pred / live_price) - 1) * 100
@@ -218,14 +220,15 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
         fig.add_trace(go.Bar(
             x=[today_date], y=[live_error_pct],
             name='Live Deviation %',
+            showlegend=False,
             marker_color='rgba(0, 255, 255, 0.3)',
             hovertemplate='Live: %{y:.2f}% Error<extra></extra>'
         ), secondary_y=True)
 
-        # Outer Halo (Pulsar effect)
+        # Outer Halo (Tactical Focus)
         fig.add_trace(go.Scatter(
             x=[today_date], y=[live_pred],
-            mode='markers', name='Live Target (Pulsar)',
+            mode='markers', name='Live Predicted Closing Price',
             marker=dict(color='rgba(0, 255, 255, 0.2)', size=25, symbol='circle')
         ), secondary_y=False)
         # Inner Core
@@ -258,6 +261,23 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+    # TACTICAL HUD: Real-time drift stat (Lower side, Right oriented)
+    if live_pred:
+        live_drift_hud = ((live_pred / live_price) - 1) * 100
+        drift_color = "#00ffff" if live_drift_hud < 0 else "#ff9900"
+        
+        st.markdown(
+            f"""
+            <div style="text-align: right; margin-top: -10px; margin-bottom: 20px;">
+                <span style="color: grey; font-size: 0.8rem; font-family: monospace;">TACTICAL STATUS: </span>
+                <span style="color: {drift_color}; font-size: 1.1rem; font-family: monospace; font-weight: bold;">
+                    PERCENTAGE DEVIATION FROM CURRENT PRICE: {live_drift_hud:+.2f}%
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     # Percentage Difference Stats Row
     audit_df = eval_df.dropna(subset=['predicted_price'])
