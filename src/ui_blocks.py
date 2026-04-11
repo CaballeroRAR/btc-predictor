@@ -295,11 +295,11 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
     st.divider()
     st.subheader("Statistical Prediction Audit")
     
-    # Get dates that have both predictions and actuals for audit
-    audit_dates = sorted(eval_df['forecast_date'].unique(), reverse=True)
+    # Get dates from index that have both predictions and actuals for audit
+    audit_dates = sorted(eval_df.index.unique(), reverse=True)
     
     if not audit_dates:
-        st.info("No audited dates available for statistical drill-down yet.")
+        st.info("No audited dates (Today-1 or older) available for statistical drill-down yet.")
         return
 
     selected_audit_date = st.selectbox(
@@ -310,8 +310,8 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
 
     if selected_audit_date:
         # Filter all historical predictions for that specific day
-        # (This includes results from all simulations run before that date)
-        dist_df = history_df[pd.to_datetime(history_df['forecast_date']) == selected_audit_date].copy()
+        # (Compare against date objects in history_df)
+        dist_df = history_df[history_df['forecast_date'].dt.date == selected_audit_date].copy()
         
         if not dist_df.empty:
             actual_for_day = dist_df['actual_price'].dropna().unique()

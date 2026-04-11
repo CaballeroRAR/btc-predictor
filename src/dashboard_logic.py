@@ -45,7 +45,23 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False):
     latest_price = clean_df['Close'].iloc[-1]
     lifecycle.save_calibration_state(avg_drift, latest_price)
 
-    # 3. Forecast Execution
+    # 3. Model & Feature Alignment
+    model, scaler = lifecycle.get_active_model()
+    
+    # Inject Drift Features for Closed-Loop Parity
+    # For inference, we use the session's current drift as the 'Live' alignment
+    clean_df['Drift_Alignment'] = avg_drift
+    clean_df['Drift_Volatility'] = 0.0 # Intraday volatility is 0 for single-point inference
+    
+    # Ensure column order matches training: exactly 14 features
+    expected_cols = [
+        'Open', 'High', 'Low', 'Close', 'Volume', 
+        'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
+        'Sentiment', 'News_Sentiment', 'Drift_Alignment', 'Drift_Volatility'
+    ]
+    clean_df = clean_df[expected_cols]
+
+    # 4. Forecast Execution
     recent_data_raw = clean_df.tail(cloud_config.LOOKBACK_DAYS).copy()
     recent_data_aligned = recent_data_raw.copy()
     recent_data_aligned['Sentiment'] = np.clip(recent_data_aligned['Sentiment'] + avg_drift, 0, 100)
@@ -88,7 +104,8 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False):
         forecast_date=forecast_dates[0].strftime('%Y-%m-%d'),
         prediction=mean[0],
         market_price=live_price,
-        drift_pct=live_drift_val
+        drift_pct=live_drift_val,
+        source=source
     )
     
     # 8. Return UI-ready results

@@ -9,10 +9,39 @@ from data_loader import prepare_merged_dataset, create_sequences
 from model import build_lstm_model
 
 def train_pipeline():
-    # 1. Load Data
+    # 1. Load Core Market Data
     _, df = prepare_merged_dataset()
     
-    # 2. Scale Features
+    # 2. Ingest Closed-Loop Enrichment (SYSTEM Drift Logs)
+    from database import DatabaseManager
+    db = DatabaseManager()
+    drift_logs = db.get_live_drift_history(days=30)
+    
+    if drift_logs:
+        print(f"Enriching model with {len(drift_logs)} intraday system snapshots...")
+        drift_df = pd.DataFrame(drift_logs)
+        drift_df['date'] = pd.to_datetime(drift_df['forecast_date']).dt.date
+        
+        # Aggregate hourly drift into daily indicators
+        daily_drift = drift_df.groupby('date').agg(
+            Drift_Alignment=('drift_pct', 'mean'),
+            Drift_Volatility=('drift_pct', 'std')
+        ).fillna(0)
+        
+        # Align indexes and merge
+        df_dates = df.index.date
+        df.index = df_dates
+        df = df.join(daily_drift, how='left').fillna(0)
+        
+        # Restore DatetimeIndex for subsequent processing
+        df.index = pd.to_datetime(df.index)
+    else:
+        # Fallback for cold-start: initialize features with 0
+        df['Drift_Alignment'] = 0.0
+        df['Drift_Volatility'] = 0.0
+    
+    # 3. Scale Features
+    print(f"Final training matrix shape: {df.shape} ({list(df.columns)})")
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(df.values)
     

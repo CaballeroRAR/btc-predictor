@@ -11,7 +11,7 @@ def init_aiplatform():
         staging_bucket=f"gs://{cloud_config.BUCKET_NAME}"
     )
 
-def trigger_training_job():
+def trigger_training_job(service_account=None):
     """
     Launches a Custom Training Job on Vertex AI using the pre-built Docker image.
     Returns the job object.
@@ -19,10 +19,12 @@ def trigger_training_job():
     init_aiplatform()
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    display_name = f"btc-trainer-manual-{timestamp}"
+    display_name = f"btc-trainer-auto-{timestamp}"
+    
+    # Use provided SA or fallback to config if specified
+    sa_email = service_account or os.getenv("SERVICE_ACCOUNT")
     
     # Define the Custom Job
-    # We use CustomJob specifically because our logic is contained in a single container
     job = aiplatform.CustomJob(
         display_name=display_name,
         worker_pool_specs=[{
@@ -39,7 +41,7 @@ def trigger_training_job():
     )
     
     # Run the job asynchronously (non-blocking)
-    job.run(sync=False)
+    job.run(sync=False, service_account=sa_email)
     return job
 
 def get_latest_training_jobs(limit=1):

@@ -22,7 +22,7 @@ class DatabaseManager:
         self.predictions_col = COLLECTION_PREDICTIONS
         self.drift_col = COLLECTION_LIVE_DRIFT
 
-    def log_live_drift(self, forecast_date, prediction, market_price, drift_pct):
+    def log_live_drift(self, forecast_date, prediction, market_price, drift_pct, source="USER"):
         """Log high-frequency tactical drift snapshots to a dedicated collection."""
         try:
             doc_ref = self.db.collection(self.drift_col).document()
@@ -31,7 +31,8 @@ class DatabaseManager:
                 'forecast_date': forecast_date, 
                 'predicted_price': float(prediction),
                 'market_price': float(market_price),
-                'drift_pct': float(drift_pct)
+                'drift_pct': float(drift_pct),
+                'source': source
             })
             return True
         except Exception as e:
@@ -54,6 +55,21 @@ class DatabaseManager:
     def delete_investment(self, inv_id):
         """Remove an investment."""
         self.db.collection(self.investments_col).document(str(inv_id)).delete()
+
+    def get_live_drift_history(self, days=30):
+        """Retrieve recent SYSTEM-only drift logs for model training enrichment."""
+        try:
+            cutoff = datetime.now() - pd.Timedelta(days=days)
+            docs = self.db.collection(self.drift_col)\
+                .where("source", "==", "SYSTEM")\
+                .where("timestamp", ">=", cutoff)\
+                .order_by("timestamp")\
+                .stream()
+            
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            print(f"Error fetching drift history: {str(e)}")
+            return []
 
     # --- Predictions & Evaluation ---
 
