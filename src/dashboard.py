@@ -176,7 +176,7 @@ if model and scaler and not full_df.empty:
                 with st.spinner("Provisioning Vertex AI CustomJob..."):
                     try:
                         new_job = vertex.trigger_training_job()
-                        st.success(f"Job successfully created: {new_job.display_name}")
+                        st.success("Vertex AI Training Job successfully triggered!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to launch job: {str(e)}")
