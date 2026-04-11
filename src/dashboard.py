@@ -144,7 +144,9 @@ if model and scaler and not full_df.empty:
             st.write(f"**Drift:** {current_drift:+.2f} pts")
             
             if st.button("Recalibrate Market Alignment", width='stretch'):
-                st.session_state['base_forecast'] = logic.get_base_forecast(db_mgr, model, scaler, clean_df, force=True)
+                # Force a fresh market data pull to ensure latest ticker prices are used for drift analysis
+                _, f_clean = load_market_data(force=True)
+                st.session_state['base_forecast'] = logic.get_base_forecast(db_mgr, model, scaler, f_clean, force=True)
                 st.session_state['active_tab'] = "Investment Journal"
                 st.rerun()
 
