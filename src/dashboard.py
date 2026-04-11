@@ -164,7 +164,14 @@ if model and scaler and not full_df.empty:
                 if st.button("Refresh Job Status", width='stretch'):
                     st.rerun()
             else:
-                st.write("No active training jobs found.")
+                st.write("No active training jobs found in scanned regions.")
+
+            st.markdown("### Asset Management")
+            if st.button("🔄 Sync/Update Model from Cloud Storage", width='stretch', help="Pull the latest .h5 and .pkl files from GCS. Use this once your Vertex Job is SUCCEEDED."):
+                with st.spinner("Downloading assets from GCS..."):
+                    lifecycle.force_sync_from_gcs(check_exists=False)
+                    st.success("Model assets updated! Refreshing analytical core...")
+                    st.rerun()
 
             st.divider()
             # 2. Training Trigger

@@ -22,14 +22,14 @@ def get_active_model():
         if is_streamlit:
             with st.status("Syncing model from Google Cloud Storage...", expanded=True) as status:
                 try:
-                    _perform_sync()
+                    force_sync_from_gcs(check_exists=True)
                     status.update(label="Sync Complete!", state="complete", expanded=False)
                 except Exception as e:
                     status.update(label="Sync Failed!", state="error", expanded=True)
                     raise RuntimeError(f"Could not retrieve model from GCS: {str(e)}")
         else:
             print(f"[{datetime.now()}] [SYSTEM] Headless Sync: Downloading assets...")
-            _perform_sync()
+            force_sync_from_gcs(check_exists=True)
 
     # 2. Final Load
     try:
@@ -43,16 +43,27 @@ def get_active_model():
             print(f"[{datetime.now()}] [ERROR] Model load failure: {str(e)}")
         return None, None
 
-def _perform_sync():
-    """Internal helper for GCS downloads."""
+def force_sync_from_gcs(check_exists=False):
+    """
+    Downloads model and scaler from GCS. 
+    If check_exists=True, it only downloads what is missing.
+    If check_exists=False, it overwrites local files with cloud versions.
+    """
     client = storage.Client()
     bucket = client.bucket(cloud_config.BUCKET_NAME)
-    if not os.path.exists(cloud_config.MODEL_PATH):
+    
+    # Model File
+    if not check_exists or not os.path.exists(cloud_config.MODEL_PATH):
         blob = bucket.blob(f"{cloud_config.MODEL_DIR}/btc_lstm_model.h5")
         blob.download_to_filename(cloud_config.MODEL_PATH)
-    if not os.path.exists(cloud_config.SCALER_PATH):
+        m_time = os.path.getmtime(cloud_config.MODEL_PATH)
+        print(f"[{datetime.now()}] [GCS] Model downloaded. Local mtime: {m_time}")
+
+    # Scaler File
+    if not check_exists or not os.path.exists(cloud_config.SCALER_PATH):
         blob = bucket.blob(f"{cloud_config.MODEL_DIR}/scaler.pkl")
         blob.download_to_filename(cloud_config.SCALER_PATH)
+        print(f"[{datetime.now()}] [GCS] Scaler downloaded.")
 
 def get_model_info():
     """Returns model age in days and training timestamp based on last modification."""

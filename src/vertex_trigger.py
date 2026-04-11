@@ -80,12 +80,30 @@ def trigger_training_job(service_account=None):
 def get_latest_training_jobs(limit=1):
     """
     Retrieve the most recent CustomJobs for this project to monitor status.
+    Uses multi-region scanning to ensure visibility across common GCP zones.
     """
     init_aiplatform()
-    # List jobs and filter by display name prefix if needed
-    jobs = aiplatform.CustomJob.list(order_by="create_time desc")
-    # Filters only for our trainer jobs
-    ours = [j for j in jobs if "btc-trainer" in j.display_name]
+    
+    # We scan multiple regions to be safe
+    scan_regions = [cloud_config.REGION, "us-east1", "europe-west1"]
+    all_jobs = []
+    
+    for region in scan_regions:
+        try:
+            # We must init for each region to query the correct regional endpoint
+            aiplatform.init(project=cloud_config.PROJECT_ID, location=region)
+            jobs = aiplatform.CustomJob.list(order_by="create_time desc")
+            all_jobs.extend(jobs)
+        except Exception:
+            continue
+            
+    # Re-init back to the default config region
+    init_aiplatform()
+    
+    # Filters only for our trainer jobs and sort by creation time
+    ours = [j for j in all_jobs if "btc-trainer" in j.display_name]
+    ours.sort(key=lambda x: x.create_time, reverse=True)
+    
     return ours[:limit]
 
 def get_status_summary(job):

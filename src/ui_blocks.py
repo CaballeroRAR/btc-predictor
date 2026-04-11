@@ -344,12 +344,14 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
             )
             
             if actual_val:
-                fig_dist.add_vline(
-                    x=actual_val, 
-                    line_width=3, 
-                    line_dash="dash", 
-                    line_color=marker_color,
-                    annotation_text=marker_label
+                fig_dist.add_shape(
+                    type='line', x0=actual_val, x1=actual_val, y0=0, y1=1, yref='paper',
+                    line=dict(color=marker_color, width=3, dash='dash')
+                )
+                fig_dist.add_annotation(
+                    x=actual_val, y=0.9, yref='paper', text=marker_label,
+                    showarrow=False, font=dict(color=marker_color, size=12),
+                    textangle=-90, xanchor='left', xshift=10
                 )
             
             fig_dist.update_layout(
