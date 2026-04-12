@@ -394,16 +394,32 @@ if model and scaler and not full_df.empty:
                                 line=dict(color='rgba(255, 255, 255, 0.6)', width=1.5)
                             ))
                         
-                        # Snapshot: Raw vs Calibrated (Now "Market Prediction" - Future Only)
+                        # Snapshot: Raw vs Calibrated (Now "Market Prediction")
                         today_dt = datetime.now().date()
-                        mask = [d.date() >= today_dt for d in fd]
-                        filtered_fd = [d for d, m in zip(fd, mask) if m]
-                        filtered_cal_p = [p for p, m in zip(cal_p, mask) if m]
                         
-                        if filtered_fd:
+                        # Past Prediction: Lower Alpha (0.4)
+                        past_mask = [d.date() < today_dt for d in fd]
+                        p_fd = [d for d, m in zip(fd, past_mask) if m]
+                        p_cal_p = [p for p, m in zip(cal_p, past_mask) if m]
+                        
+                        if p_fd:
                             m_fig.add_trace(go.Scatter(
-                                x=filtered_fd, y=filtered_cal_p, 
-                                name='Market Prediction', 
+                                x=p_fd, y=p_cal_p, 
+                                name='Market Prediction (Past)', 
+                                mode='lines+markers', 
+                                line=dict(color='rgba(0, 255, 255, 0.4)', width=1.5), 
+                                marker=dict(size=7, symbol='diamond')
+                            ))
+
+                        # Future Prediction: Solid (1.0)
+                        future_mask = [d.date() >= today_dt for d in fd]
+                        f_fd = [d for d, m in zip(fd, future_mask) if m]
+                        f_cal_p = [p for p, m in zip(cal_p, future_mask) if m]
+                        
+                        if f_fd:
+                            m_fig.add_trace(go.Scatter(
+                                x=f_fd, y=f_cal_p, 
+                                name='Market Prediction (Future)', 
                                 mode='lines+markers', 
                                 line=dict(color='#00ffff', width=2.5), 
                                 marker=dict(size=7, symbol='diamond')
@@ -418,6 +434,28 @@ if model and scaler and not full_df.empty:
                             mode='lines', 
                             line=dict(color='#00ffff', width=1, dash='dot')
                         ))
+                        
+                        # --- TEMPORAL DRIFT BRIDGE ---
+                        # Draw vertical lines between original diamonds and live forecast for dates before yesterday
+                        yesterday_dt = today_dt - timedelta(days=1)
+                        bridge_x = []
+                        bridge_y = []
+                        live_lookup = {d.date(): p for d, p in zip(current_f_dates, current_f_prices)}
+                        
+                        for d, p in zip(p_fd, p_cal_p):
+                            if d.date() < yesterday_dt and d.date() in live_lookup:
+                                bridge_x.extend([d, d, None]) # [Start, End, Break]
+                                bridge_y.extend([p, live_lookup[d.date()], None])
+                        
+                        if bridge_x:
+                            m_fig.add_trace(go.Scatter(
+                                x=bridge_x, y=bridge_y,
+                                name='Drift Bridge',
+                                mode='lines',
+                                line=dict(color='rgba(0, 255, 255, 0.2)', width=1, dash='dot'),
+                                showlegend=False,
+                                hoverinfo='skip'
+                            ))
                         
                         # Target Line
                         m_fig.add_trace(go.Scatter(x=fd, y=[target_price]*len(fd), name='Target', line=dict(color='red', width=1, dash='dash')))
@@ -446,7 +484,7 @@ if model and scaler and not full_df.empty:
                                 textangle=-90, xanchor='left', xshift=10
                             )
 
-                        # Custom High-Res X-Axis with (+N) Days
+# Custom High-Res X-Axis with (+N) Days
                         tick_vals = fd
                         tick_text = [d.strftime('%a %d') for d in fd]
                         
@@ -464,7 +502,7 @@ if model and scaler and not full_df.empty:
                                 gridcolor='rgba(255, 255, 255, 0.1)'
                             )
                         )
-                        st.plotly_chart(m_fig, width='stretch')
+                        st.plotly_chart(m_fig, width="stretch")
                         
                         # --- FOOTER: STATUS & RED ACTION ---
                         footer_col1, footer_col2 = st.columns([2, 1])
@@ -477,10 +515,23 @@ if model and scaler and not full_df.empty:
                                 st.caption("Temporal Shift: Out of Window")
                         
                         with footer_col2:
-                            st.markdown("<p style='color: #ff4b4b; font-size: 0.8em; text-align: right; margin-bottom: -5px;'>Destructive Action</p>", unsafe_allow_html=True)
-                            if st.button("Delete Record", key=f"del_{inv['id']}", width='stretch', type="secondary"):
-                                simulator.delete_entry(inv['id'])
-                                st.rerun()
+                            confirm_key = f"confirm_del_{inv['id']}"
+                            if st.session_state.get(confirm_key):
+                                st.markdown("<p style='color: #ff4b4b; font-size: 0.8em; text-align: right; margin-bottom: 5px;'>Destructive Action: Are you sure?</p>", unsafe_allow_html=True)
+                                sub_col1, sub_col2 = st.columns(2)
+                                with sub_col1:
+                                    if st.button("Cancel", key=f"can_{inv['id']}"):
+                                        st.session_state[confirm_key] = False
+                                        st.rerun()
+                                with sub_col2:
+                                    if st.button("Yes, Delete", key=f"yes_{inv['id']}", type="primary"):
+                                        simulator.delete_entry(inv['id'])
+                                        st.session_state[confirm_key] = False
+                                        st.rerun()
+                            else:
+                                if st.button("Delete Record", key=f"del_{inv['id']}", type="secondary"):
+                                    st.session_state[confirm_key] = True
+                                    st.rerun()
     
     # Infrastructure Audit
     st.divider()
