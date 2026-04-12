@@ -9,8 +9,7 @@ from src.repositories.calibration_repo import CalibrationRepository
 from src.repositories.asset_repo import AssetRepository
 from src.utils.logger import setup_logger
 import cloud_config as cloud_config
-import forecasting_engine as legacy_engine  # For impact analysis ablation
-import calibration as legacy_calib  # For batch_calibrate_sentiment
+from src.core.analysis import calculate_signal_impact
 from data_loader import get_last_hour_price_with_cache
 
 logger = setup_logger("facades.forecasting")
@@ -71,13 +70,13 @@ class ForecastingFacade:
         mean, std = self.strategy.predict(model, scaler, recent_data)
         tight_std = std * 0.5  # Industrial confidence interval
 
-        # 5. Timeline & Backtest
-        # (Using legacy_engine for backtest parity)
-        backtest_series = legacy_engine.get_backtest_predictions(model, scaler, clean_df)
+        # 5. Timeline & Backtest Execution
+        # (Migrated from legacy_engine.get_backtest_predictions)
+        backtest_series = self._generate_backtest(model, scaler, clean_df)
         forecast_start = clean_df.index[-1] + timedelta(days=1)
         dates = [forecast_start + timedelta(days=i) for i in range(cloud_config.FORECAST_DAYS)]
 
-        # 6. Persistence & Logging
+        # 6. Persistence & Internal Logging
         self.prediction_repo.log_prediction_batch(dates, mean)
         
         results = {
@@ -91,7 +90,7 @@ class ForecastingFacade:
         self.firestore_repo.save_system_snapshot(results)
 
         # 7. UI / API Response Object
-        return {
+        res = {
             'is_cached': False,
             'calculation_time': datetime.now(timezone.utc),
             'dates': dates,
@@ -100,6 +99,36 @@ class ForecastingFacade:
             'backtest': backtest_series,
             'avg_drift': avg_drift
         }
+        
+        # 8. Optimized Signal Attribution (Conditional)
+        if include_impact:
+            res['impact_df'] = calculate_signal_impact(model, scaler, recent_data, mean, self.strategy)
+            
+        return res
+
+    def _generate_backtest(self, model, scaler, full_df, depth=30):
+        """
+        Produce a serial backtest for the last N days to evaluate model fitness.
+        Migrated from forecasting_engine.get_backtest_predictions.
+        """
+        import tensorflow as tf
+        lookback = cloud_config.LOOKBACK_DAYS
+        backtest_dates = full_df.index[-depth:]
+        preds = []
+        
+        for i in range(len(full_df) - depth, len(full_df)):
+            window = full_df.iloc[i - lookback : i]
+            scaled = scaler.transform(window.values)
+            X = tf.convert_to_tensor(np.expand_dims(scaled, axis=0), dtype=tf.float32)
+            
+            # Simple inference for backtest (no dropout needed)
+            p_scaled = model(X, training=False)[0, 0]
+            
+            dummy = np.zeros((1, scaler.n_features_in_))
+            dummy[0, 3] = p_scaled
+            preds.append(scaler.inverse_transform(dummy)[0, 3])
+            
+        return pd.Series(preds, index=backtest_dates)
 
     def sync_market_actuals(self, full_df):
         """Matches past predictions with actual market action."""
@@ -125,12 +154,17 @@ class ForecastingFacade:
             return pd.DataFrame()
             
         df = pd.DataFrame(history)
-        # Ensure all columns required by ui_blocks are present
-        required = ['forecast_date', 'predicted_price', 'actual_price', 'sim_run_date']
-        for col in required:
-            if col not in df.columns:
-                df[col] = None
-                
+        # Rename or ensure repository schema matches UI expectations
+        # Expected index is Date/forecast_date
+        if 'forecast_date' in df.columns:
+            df['Date'] = pd.to_datetime(df['forecast_date'])
+            df.set_index('Date', inplace=True)
+            
+        if 'predicted_price' not in df.columns and 'price' in df.columns:
+            df = df.rename(columns={'price': 'predicted_price'})
+            
+        # UI Chart expects 'actual_price' to be filled for historical metrics
+        # The prediction_repo handles this matching during sync_market_actuals
         return df
 
     def _format_snapshot(self, snapshot):

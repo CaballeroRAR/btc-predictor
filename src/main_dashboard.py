@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 load_dotenv()
 import cloud_config
 from data_loader import prepare_merged_dataset, get_last_hour_price_with_cache, fetch_wikipedia_hourly
-import investments_manager as inv_mgr
 import ui_blocks as ui
 from src.utils.logger import setup_logger
 from src.facades.forecasting import ForecastingFacade
@@ -24,18 +23,11 @@ from src.facades.simulation_facade import SimulationFacade
 from src.facades.lifecycle_facade import LifecycleFacade
 from src.repositories.asset_repo import AssetRepository
 
-# LEGACY IMPORTS (Kept for parity safety per user request)
-# import prediction_logger as pred_log
-# import dashboard_logic as logic
-# import model_lifecycle as lifecycle
-# from database import DatabaseManager
-
 logger = setup_logger("ui.dashboard")
 forecaster = ForecastingFacade()
 simulator = SimulationFacade()
 lifecycle_manager = LifecycleFacade()
 assets = AssetRepository()
-
 # --- SECURITY GATEWAY ---
 def check_password():
     """Returns True if the user had the correct password."""
