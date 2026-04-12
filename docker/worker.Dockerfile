@@ -3,7 +3,7 @@ FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONPATH /app/src
+ENV PYTHONPATH /app
 
 # Install system dependencies needed for TensorFlow and Scikit-learn
 RUN apt-get update && apt-get install -y --no-install-recommends \

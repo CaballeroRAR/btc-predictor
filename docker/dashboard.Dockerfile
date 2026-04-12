@@ -4,6 +4,7 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
+ENV PYTHONPATH /app
 
 # Install system dependencies needed for UI components (Plotly/Streamlit)
 RUN apt-get update && apt-get install -y --no-install-recommends \

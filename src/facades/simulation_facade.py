@@ -36,3 +36,8 @@ class SimulationFacade:
     def get_journal_entries(self):
         """Retrieve historical investments."""
         return self.investment_repo.get_all_investments()
+
+    def delete_entry(self, inv_id):
+        """Remove an investment record from the journal."""
+        logger.warning(f"Deleting investment record: {inv_id}")
+        return self.investment_repo.remove_investment(inv_id)

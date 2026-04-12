@@ -77,22 +77,93 @@ def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
     
     return df
 
-def fetch_google_trends(keyword="Bitcoin", years=cloud_config.YEARS_HISTORY):
-    """Fetch Google Trends interest over time."""
-    logger.info(f"Fetching Google Trends for '{keyword}'...")
-    pytrends = TrendReq(hl='en-US', tz=360)
+def fetch_wikipedia_views(article="Bitcoin", years=cloud_config.YEARS_HISTORY):
+    """
+    Fetch historical Wikipedia pageviews as a resilient alternative to Google Trends.
+    Stateless, no API key required.
+    """
+    logger.info(f"Fetching Wikimedia Pageviews for '{article}'...")
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=years * 365)
+    
+    start_str = start_date.strftime("%Y%m%d00")
+    end_str = end_date.strftime("%Y%m%d00")
+    
+    # Wikimedia User-Agent Policy enforcement
+    headers = {
+        'User-Agent': 'BTCPredictorIndustrial/1.0 (contact: caballero.data.scientist@tutamail.com)'
+    }
+    
+    url = f"https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/all-agents/{article}/daily/{start_str}/{end_str}"
     
     try:
-        pytrends.build_payload([keyword], cat=0, timeframe='today 5-y', gprop='') # 5-y is max for daily-ish
-        df = pytrends.interest_over_time()
-        
-        if not df.empty:
-            df = df[[keyword]].rename(columns={keyword: 'Google_Trends'})
-            return df
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            items = response.json().get('items', [])
+            if items:
+                df = pd.DataFrame(items)
+                df['timestamp'] = pd.to_datetime(df['timestamp'], format='%Y%m%d%H')
+                df = df.rename(columns={'timestamp': 'Date', 'views': 'Curiosity_Raw'})
+                df.set_index('Date', inplace=True)
+                
+                # Normalize to 0-100 scale to maintain feature parity with Google Trends distribution
+                v_min = df['Curiosity_Raw'].min()
+                v_max = df['Curiosity_Raw'].max()
+                df['Google_Trends'] = (df['Curiosity_Raw'] - v_min) / (v_max - v_min) * 100
+                
+                return df[['Google_Trends']]
     except Exception as e:
-        logger.error(f"Failed to fetch Google Trends (Rate Limit): {e}")
+        logger.error(f"Wikimedia fetch failed: {e}")
         
     return pd.DataFrame()
+
+def fetch_curiosity_signal():
+    """
+    Orchestrates curiosity ingestion with fallback.
+    Favors Wikipedia for industrial stability.
+    """
+    # 1. Primary: Wikipedia (Stateless & Stable)
+    wiki_df = fetch_wikipedia_views()
+    if not wiki_df.empty:
+        return wiki_df
+        
+    # 2. Fallback: Google Trends (Brittle)
+    return fetch_google_trends()
+
+def fetch_wikipedia_hourly(article="Bitcoin"):
+    """
+    Fetch the last 48 hours of pageviews with 1-hour resolution.
+    Used for tactical drift analysis and smart recalibration.
+    """
+    logger.info(f"Fetching Wikimedia HOURLY Pulse for '{article}'...")
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=2)
+    
+    start_str = start_date.strftime("%Y%m%d00")
+    end_str = end_date.strftime("%Y%m%d23")
+    
+    headers = {
+        'User-Agent': 'BTCPredictorIndustrial/1.0 (contact: caballero.data.scientist@tutamail.com)'
+    }
+    
+    url = f"https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/all-agents/{article}/hourly/{start_str}/{end_str}"
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            items = response.json().get('items', [])
+            if items:
+                df = pd.DataFrame(items)
+                df['timestamp'] = pd.to_datetime(df['timestamp'], format='%Y%m%d%H')
+                df = df.rename(columns={'timestamp': 'Date', 'views': 'Curiosity_Hourly'})
+                df.set_index('Date', inplace=True)
+                return df[['Curiosity_Hourly']]
+    except Exception as e:
+        logger.error(f"Wikimedia Hourly pulse failed: {e}")
+        
+    return pd.DataFrame()
+
+def fetch_google_trends(keyword="Bitcoin", years=cloud_config.YEARS_HISTORY):
 
 def fetch_sentiment_data():
     """Fetch historical Crypto Fear & Greed Index data."""
@@ -125,7 +196,7 @@ def prepare_merged_dataset(force_refresh=False):
     # Fresh API Ingestion
     price_df = fetch_btc_data()
     sentiment_df = fetch_sentiment_data()
-    trends_df = fetch_google_trends()
+    trends_df = fetch_curiosity_signal()
     
     # Align indexes (Price data is the master timeline)
     merged_df = price_df.join(sentiment_df, how='left')

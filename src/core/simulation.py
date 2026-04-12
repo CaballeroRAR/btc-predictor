@@ -19,6 +19,12 @@ def find_target_crossing_date(dates, prices, target_price: float):
             return d
     return None
 
+def calculate_withdrawal_date(dates, prices, target_price: float):
+    """
+    Alias for find_target_crossing_date to maintain naming parity with legacy logic.
+    """
+    return find_target_crossing_date(dates, prices, target_price)
+
 def compute_withdrawal_plan(base_forecast: dict, entry_price: float, profit_target_pct: float, investment_amt: float):
     """
     Pure business logic for investment simulation.

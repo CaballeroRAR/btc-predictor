@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 # 1. Configuration & Secrets
 load_dotenv()
 import cloud_config
-from data_loader import prepare_merged_dataset
+from data_loader import prepare_merged_dataset, get_last_hour_price_with_cache, fetch_wikipedia_hourly
 import investments_manager as inv_mgr
 import ui_blocks as ui
 from src.utils.logger import setup_logger
@@ -81,6 +81,10 @@ if force_refresh:
     st.session_state["authenticated"] = True
     st.rerun()
 
+# 2. Market Data Orchestration
+if 'last_market_sync' not in st.session_state:
+    st.session_state['last_market_sync'] = datetime.now() - timedelta(hours=1) # Force first pull
+
 @st.cache_data
 def load_market_data(force=False):
     return prepare_merged_dataset(force_refresh=force)
@@ -110,15 +114,39 @@ if model and scaler and not full_df.empty:
         if ts:
             st.caption(f"Loaded from cache (Generated {ts.strftime('%H:%M')} UTC)")
 
-    # 5. Sidebar Simulation Controls
+    # 5. Market Metrics Initialization (Moved up for sidebar defaults)
+    latest_price_val = full_df['Close'].iloc[-1]
+    latest_date_val = full_df.index[-1]
+    
+    # Live Overlay: Fetch absolute latest ticker price for UI display
+    live_price = get_last_hour_price_with_cache()
+    if live_price and live_price != latest_price_val:
+        latest_price_val = live_price
+        latest_date_val = datetime.now() # Update timestamp to current session
+        logger.info(f"UI Overlay: Live price updated to ${latest_price_val:,.2f}")
+    
+    # Curiosity Overlay: Fetch hourly pulse
+    wiki_pulse = fetch_wikipedia_hourly()
+    interest_pulse = 0.0
+    if not wiki_pulse.empty:
+        # Calculate recent pulse relative to yesterday's avg
+        latest_hourly = wiki_pulse['Curiosity_Hourly'].iloc[-1]
+        interest_pulse = float(latest_hourly)
+        logger.info(f"UI Overlay: Curiosity pulse updated to {interest_pulse:,.0f} views/hr")
+
+    # 6. Sidebar Simulation Controls
     with st.sidebar:
         st.divider()
         st.header("Simulation Settings")
-        selected_date = st.date_input("Investment Date", value=clean_df.index[-1].date())
+        selected_date = st.date_input("Investment Date", value=latest_date_val.date())
         
+        # Calculate auto-price from the selected date
         idx = clean_df.index.get_indexer([pd.to_datetime(selected_date)], method='nearest')[0]
         auto_price = float(clean_df.iloc[idx]['Close'])
-        entry_price = st.number_input("Entry Price (USD)", value=auto_price)
+        
+        # Default to latest price if date is today
+        default_entry = latest_price_val if selected_date == latest_date_val.date() else auto_price
+        entry_price = st.number_input("Entry Price (USD)", value=default_entry)
         investment = st.number_input("Investment Amount ($)", value=1000)
         profit_target = st.number_input("Profit Target (%)", value=2.0, step=0.5)
         
@@ -154,8 +182,19 @@ if model and scaler and not full_df.empty:
             
             if st.button("Recalibrate Market Alignment", width='stretch'):
                 with st.spinner("Calibrating Neural Engine (300 Step Optimization)..."):
-                    # Force a fresh market data pull 
-                    _, f_clean = load_market_data(force=True)
+                    now = datetime.now()
+                    time_since_sync = (now - st.session_state['last_market_sync']).total_seconds() / 60
+                    
+                    if time_since_sync > 30:
+                        # Stale Data Path: Full historical rescan
+                        logger.info(f"Smart Recalibrate: Data is stale ({time_since_sync:.1f}m). Triggering full market scan.")
+                        _, f_clean = load_market_data(force=True)
+                        st.session_state['last_market_sync'] = now
+                    else:
+                        # Fast Path: Data is fresh, only pull latest price via facade internal
+                        logger.info(f"Smart Recalibrate: Data is fresh ({time_since_sync:.1f}m). Using fast-track recalibration.")
+                        f_clean = clean_df
+                    
                     st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, f_clean, force=True)
                     st.rerun()
 
@@ -199,13 +238,9 @@ if model and scaler and not full_df.empty:
                     except Exception as e:
                         st.error(f"Failed to launch job: {str(e)}")
 
-    # 6. Main Visualizations (Persistent Navigation)
     tabs = ["Market Analysis", "Investment Journal"]
     if 'active_tab' not in st.session_state:
         st.session_state['active_tab'] = tabs[0]
-        
-    latest_price_val = full_df['Close'].iloc[-1]
-    latest_date_val = full_df.index[-1]
     
     active_tab = st.radio("Navigation", tabs, index=tabs.index(st.session_state['active_tab']), horizontal=True, label_visibility="collapsed")
     st.session_state['active_tab'] = active_tab
@@ -213,7 +248,14 @@ if model and scaler and not full_df.empty:
     if active_tab == "Market Analysis":
         res = st.session_state['base_forecast']
         
-        ui.render_market_summary_metrics(latest_price_val, latest_date_val, float(res['prices'][0]), res['dates'][0].strftime('%Y-%m-%d'))
+        # Display summary with the live price and curiosity pulse
+        ui.render_market_summary_metrics(
+            latest_price_val, 
+            latest_date_val, 
+            float(res['prices'][0]), 
+            res['dates'][0].strftime('%Y-%m-%d'),
+            interest_pulse=interest_pulse
+        )
         
         if st.session_state.get('plan_triggered') and st.session_state['results'].get('withdrawal_date'):
             st.success(f"Predicted Profit Target Hit Date: {st.session_state['results']['withdrawal_date'].strftime('%Y-%m-%d')}")
@@ -271,7 +313,7 @@ if model and scaler and not full_df.empty:
         
         # Consistent Grid Hygiene & Viewport Control
         today_dt = datetime.now()
-        view_start = today_dt - timedelta(days=60)
+        view_start = today_dt - timedelta(days=30)
         view_end = r['dates'][-1] if 'results' in st.session_state else today_dt + timedelta(days=30)
         
         grid_style = dict(showgrid=True, gridcolor='rgba(255, 255, 255, 0.15)')
@@ -282,7 +324,7 @@ if model and scaler and not full_df.empty:
         fig.update_yaxes(title_text="Price (USD)", **grid_style)
         
         st.plotly_chart(fig, width='stretch')
-        ui.render_prediction_evaluation_chart(pred_log.get_performance_stats(), full_df, res)
+        ui.render_prediction_evaluation_chart(forecaster.get_performance_history(), full_df, res)
         
         # Signal Impact UI
         if res.get('impact_df') is not None:
@@ -293,7 +335,7 @@ if model and scaler and not full_df.empty:
 
     else: # Investment Journal
         st.subheader("Investment Journal")
-        invests = inv_mgr.load_investments()
+        invests = simulator.get_journal_entries()
         if not invests:
             st.info("No active investments tracked in Firestore.")
         else:
@@ -301,7 +343,7 @@ if model and scaler and not full_df.empty:
             current_f_dates = base_res['dates']
             current_f_prices = base_res['prices']
             
-            from forecasting_engine import calculate_withdrawal_date
+            from src.core.simulation import calculate_withdrawal_date
 
             # latest_price_val is already defined at the start of the UI loop from full_df
             for inv in reversed(invests):
@@ -445,7 +487,7 @@ if model and scaler and not full_df.empty:
                         with footer_col2:
                             st.markdown("<p style='color: #ff4b4b; font-size: 0.8em; text-align: right; margin-bottom: -5px;'>Destructive Action</p>", unsafe_allow_html=True)
                             if st.button("Delete Record", key=f"del_{inv['id']}", width='stretch', type="secondary"):
-                                inv_mgr.delete_investment(inv['id'])
+                                simulator.delete_entry(inv['id'])
                                 st.rerun()
     
     # Infrastructure Audit
