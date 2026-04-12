@@ -214,7 +214,7 @@ class ForecastingFacade:
                 window = clean_df.iloc[idx - cloud_config.LOOKBACK_DAYS : idx]
                 pred_mean, _ = self.strategy.predict(model, scaler, window)
                 
-                drift = float(actual_price) - float(pred_mean)
+                drift = float(actual_price) - float(pred_mean[0])
                 # Normalize drift relative to Sentiment/Trends scale (roughly)
                 # This is a heuristic to convert USD error to a '心理' (psychological) offset
                 norm_drift = np.sign(drift) * min(abs(drift) / 500.0, 10.0) 

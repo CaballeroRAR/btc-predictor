@@ -71,6 +71,7 @@ async def recalibrate():
             "drift_pct": results.get('avg_drift', 0)
         }
     except Exception as e:
+        logger.exception(f"Fatal error during recalibration: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/retrain")
@@ -87,6 +88,7 @@ async def retrain(background_tasks: BackgroundTasks):
             "job_id": res['job_id']
         }
     except Exception as e:
+        logger.exception(f"Fatal error during retraining launch: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

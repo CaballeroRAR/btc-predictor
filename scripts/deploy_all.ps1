@@ -61,7 +61,7 @@ gcloud run deploy btc-tactical-worker `
     --image "gcr.io/$PROJECT_ID/btc-tactical-worker" `
     --region $REGION `
     --project $PROJECT_ID `
-    --memory 1Gi `
+    --memory 2Gi `
     --service-account $SA_EMAIL `
     --set-env-vars $ENV_VARS `
     --no-allow-unauthenticated
