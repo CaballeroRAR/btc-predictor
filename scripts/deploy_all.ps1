@@ -44,12 +44,16 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Dashboard."; exit $LAST
 # 4. Deploy to Cloud Run
 Write-Host "`n[4/4] Deploying Dashboards and Workers to Cloud Run..." -ForegroundColor Yellow
 
+$SA_EMAIL = "btc-forecaster-sa@$PROJECT_ID.iam.gserviceaccount.com"
+$ENV_VARS = "PROJECT_ID=$PROJECT_ID,SERVICE_ACCOUNT=$SA_EMAIL,BUCKET_NAME=$BUCKET"
+
 # 4a. Dashboard Deploy
 gcloud run deploy btc-dashboard `
     --image $DASHBOARD_IMAGE `
     --region $REGION `
     --project $PROJECT_ID `
     --memory 2Gi `
+    --set-env-vars $ENV_VARS `
     --allow-unauthenticated
 
 # 4b. Tactical Worker Deploy
@@ -58,7 +62,9 @@ gcloud run deploy btc-tactical-worker `
     --region $REGION `
     --project $PROJECT_ID `
     --memory 1Gi `
-    --allow-unauthenticated
+    --service-account $SA_EMAIL `
+    --set-env-vars $ENV_VARS `
+    --no-allow-unauthenticated
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`nCOMPLETE: Pipeline Complete! All BTC Predictor services are live." -ForegroundColor Cyan
