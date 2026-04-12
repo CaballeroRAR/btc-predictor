@@ -70,12 +70,37 @@ class ForecastingFacade:
         tight_std = std * 0.5  # Industrial confidence interval
 
         # 5. Timeline & Backtest Execution
-        # (Migrated from legacy_engine.get_backtest_predictions)
-        backtest_series = self._generate_backtest(model, scaler, clean_df)
-        forecast_start = clean_df.index[-1] + timedelta(days=1)
-        dates = [forecast_start + timedelta(days=i) for i in range(cloud_config.FORECAST_DAYS)]
+        last_obs_date = clean_df.index[-1].date()
+        today_dt = datetime.now().date()
+        
+        # Determine the start date for the forecast HUD
+        # We want to ensure 'Today' is always represented for live performance tracking
+        if last_obs_date >= today_dt:
+            # We have live data for today. To get today's prediction, 
+            # we must use data ending yesterday.
+            yesterday_window = clean_df.iloc[:-1].tail(cloud_config.LOOKBACK_DAYS).copy()
+            # Apply same psych shifts to the tail of yesterday for consistency
+            yesterday_window['Sentiment'] = np.clip(yesterday_window['Sentiment'] + avg_drift, 0, 100)
+            yesterday_window['Google_Trends'] = np.clip(yesterday_window['Google_Trends'] + avg_drift/2, 0, 100)
+            
+            t_mean, t_std = self.strategy.predict(model, scaler, yesterday_window)
+            
+            # Stitch: [Today's Pred] + [Tomorrow onwards]
+            full_mean = np.concatenate([t_mean, mean])
+            full_std = np.concatenate([t_std * 0.5, tight_std])
+            all_dates = [datetime.combine(today_dt, datetime.min.time())] + [today_dt + timedelta(days=i) for i in range(1, cloud_config.FORECAST_DAYS + 1)]
+        else:
+            # Standard path: Data ends yesterday or earlier
+            full_mean = mean
+            full_std = tight_std
+            all_dates = [clean_df.index[-1] + timedelta(days=i+1) for i in range(len(mean))]
+
+        dates = all_dates
+        mean = full_mean
+        tight_std = full_std
 
         # 6. Persistence & Internal Logging
+        backtest_series = self._generate_backtest(model, scaler, clean_df)
         self.prediction_repo.log_prediction_batch(dates, mean)
         
         results = {

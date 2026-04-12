@@ -277,7 +277,8 @@ if model and scaler and not full_df.empty:
                 marker=dict(size=8, symbol='circle')
             ))
             if st.session_state.get('plan_triggered'):
-                fig.add_trace(go.Scatter(x=r['dates'], y=[r['target']]*len(r['dates']), name='Target', line=dict(color='red', dash='dash')))
+                target_val = r.get('target_price', 0.0)
+                fig.add_trace(go.Scatter(x=r['dates'], y=[target_val]*len(r['dates']), name='Target', line=dict(color='red', dash='dash')))
 
             # --- ENTRY SNAPSHOT OVERLAY ---
             investments = simulator.get_journal_entries()
