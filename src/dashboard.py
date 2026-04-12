@@ -58,6 +58,8 @@ st.sidebar.header("Global Controls")
 force_refresh = st.sidebar.button("Force Market Refresh", width='stretch')
 
 if force_refresh:
+    print(f"[{datetime.now()}] [CACHE] User triggered Global Market Refresh. Flushing all state and analytical caches.")
+    st.sidebar.warning("Flushing Market Cache...")
     st.cache_data.clear()
     st.session_state.clear()
     st.session_state["authenticated"] = True
@@ -209,7 +211,13 @@ if model and scaler and not full_df.empty:
 
         fig = go.Figure()
         hv = full_df.tail(90)
-        fig.add_trace(go.Scatter(x=hv.index, y=hv['Close'], name='Actual Price', line=dict(color='white', width=2)))
+        fig.add_trace(go.Scatter(
+            x=hv.index, y=hv['Close'], 
+            name='Actual Price', 
+            mode='lines+markers',
+            line=dict(color='white', width=2),
+            marker=dict(size=6)
+        ))
         
         if 'results' in st.session_state:
             st.divider()
@@ -218,11 +226,53 @@ if model and scaler and not full_df.empty:
             fig.add_trace(go.Scatter(x=r['backtest'].index, y=r['backtest'].values, name='Model (Backtest)', line=dict(color='cyan', dash='dot', width=1)))
             fig.add_trace(go.Scatter(x=r['dates'], y=r['prices']+r['std'], mode='lines', line=dict(width=0), showlegend=False))
             fig.add_trace(go.Scatter(x=r['dates'], y=r['prices']-r['std'], mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(0, 255, 0, 0.1)', name='68% CI'))
-            fig.add_trace(go.Scatter(x=r['dates'], y=r['prices'], name='Forecast Mean', line=dict(color='#00ff00', width=3)))
+            fig.add_trace(go.Scatter(
+                x=r['dates'], y=r['prices'], 
+                name='Forecast Mean', 
+                mode='lines+markers',
+                line=dict(color='#00ff00', width=3),
+                marker=dict(size=8, symbol='circle')
+            ))
             if st.session_state.get('plan_triggered'):
                 fig.add_trace(go.Scatter(x=r['dates'], y=[r['target']]*len(r['dates']), name='Target', line=dict(color='red', dash='dash')))
+
+            # --- ENTRY SNAPSHOT OVERLAY (Newest Recalibration Point) ---
+            investments = inv_mgr.load_investments(db_mgr=db_mgr)
+            if investments:
+                # Sort by timestamp to find the absolute newest entry
+                latest_inv = sorted(investments, key=lambda x: x.get('timestamp', ''), reverse=True)[0]
+                if 'forecast_prices' in latest_inv and 'forecast_dates' in latest_inv:
+                    e_dates = [pd.to_datetime(d) for d in latest_inv['forecast_dates']]
+                    e_prices = latest_inv['forecast_prices']
+                    fig.add_trace(go.Scatter(
+                        x=e_dates, y=e_prices, 
+                        name='Last Entry State', 
+                        mode='lines+markers',
+                        line=dict(color='#4169E1', width=1, dash='dot'),
+                        marker=dict(size=6, symbol='diamond')
+                    ))
         
-        fig.update_layout(height=500, template="plotly_dark", paper_bgcolor='black', plot_bgcolor='black', margin=dict(l=0, r=0, t=20, b=0))
+        fig.update_layout(
+            height=500, 
+            template="plotly_dark", 
+            paper_bgcolor='black', 
+            plot_bgcolor='black', 
+            margin=dict(l=0, r=0, t=20, b=0),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        # Consistent Grid Hygiene & Viewport Control
+        today_dt = datetime.now()
+        view_start = today_dt - timedelta(days=60)
+        view_end = r['dates'][-1] if 'results' in st.session_state else today_dt + timedelta(days=30)
+        
+        grid_style = dict(showgrid=True, gridcolor='rgba(255, 255, 255, 0.15)')
+        fig.update_xaxes(
+            range=[view_start, view_end],
+            **grid_style
+        )
+        fig.update_yaxes(title_text="Price (USD)", **grid_style)
+        
         st.plotly_chart(fig, width='stretch')
         ui.render_prediction_evaluation_chart(pred_log.get_performance_stats(), full_df, res)
         

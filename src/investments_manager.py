@@ -5,20 +5,19 @@ from datetime import datetime
 
 INVESTMENTS_FILE = "data/investments.json"
 
-def load_investments():
-    """Load investments from JSON file."""
-    if not os.path.exists(INVESTMENTS_FILE):
-        return []
-    try:
-        with open(INVESTMENTS_FILE, 'r') as f:
-            return json.load(f)
-    except:
-        return []
+def load_investments(db_mgr=None):
+    """Load investments from Firestore."""
+    from database import DatabaseManager
+    if db_mgr is None:
+        db_mgr = DatabaseManager()
+    return db_mgr.get_investments()
 
-def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, original_withdrawal_date=None, note=""):
-    """Append a new investment to the journal with forecast snapshot."""
-    investments = load_investments()
-    
+def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, original_withdrawal_date=None, note="", db_mgr=None):
+    """Append a new investment to the Firestore journal with forecast snapshot."""
+    from database import DatabaseManager
+    if db_mgr is None:
+        db_mgr = DatabaseManager()
+        
     # Convert numpy arrays to lists for JSON serialization
     fp = forecast_prices.tolist() if forecast_prices is not None else []
     cp = calibrated_prices.tolist() if calibrated_prices is not None else []
@@ -40,15 +39,12 @@ def save_investment(amount, date, price, forecast_prices=None, calibrated_prices
         "timestamp": str(datetime.now())
     }
     
-    investments.append(new_inv)
-    os.makedirs(os.path.dirname(INVESTMENTS_FILE), exist_ok=True)
-    with open(INVESTMENTS_FILE, 'w') as f:
-        json.dump(investments, f, indent=4)
+    db_mgr.save_investment(new_inv)
     return new_inv
 
-def delete_investment(inv_id):
+def delete_investment(inv_id, db_mgr=None):
     """Remove an investment by ID."""
-    investments = load_investments()
-    investments = [inv for inv in investments if inv['id'] != inv_id]
-    with open(INVESTMENTS_FILE, 'w') as f:
-        json.dump(investments, f, indent=4)
+    from database import DatabaseManager
+    if db_mgr is None:
+        db_mgr = DatabaseManager()
+    db_mgr.delete_investment(inv_id)

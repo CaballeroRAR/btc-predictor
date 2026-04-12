@@ -12,6 +12,7 @@ load_dotenv()
 COLLECTION_INVESTMENTS = "investments"
 COLLECTION_PREDICTIONS = "daily_predictions"
 COLLECTION_LIVE_DRIFT = "live_drift_audit"
+COLLECTION_CALIBRATION = "calibration_state"
 
 class DatabaseManager:
     def __init__(self):
@@ -21,6 +22,7 @@ class DatabaseManager:
         self.investments_col = COLLECTION_INVESTMENTS
         self.predictions_col = COLLECTION_PREDICTIONS
         self.drift_col = COLLECTION_LIVE_DRIFT
+        self.calib_col = COLLECTION_CALIBRATION
 
     def log_live_drift(self, forecast_date, prediction, market_price, drift_pct, source="USER"):
         """Log high-frequency tactical drift snapshots to a dedicated collection."""
@@ -39,7 +41,30 @@ class DatabaseManager:
             print(f"Error logging live drift: {str(e)}")
             return False
 
-    # --- Investments ---
+    # --- Calibration State ---
+
+    def save_calibration_state(self, state_data):
+        """Save the model's market-alignment (drift) calibration state to Firestore."""
+        try:
+            state_data["timestamp"] = firestore.SERVER_TIMESTAMP
+            self.db.collection(self.calib_col).document("latest").set(state_data)
+            return True
+        except Exception as e:
+            print(f"Error saving calibration state: {str(e)}")
+            return False
+
+    def get_calibration_state(self):
+        """Retrieve the latest market-alignment calibration state."""
+        try:
+            doc = self.db.collection(self.calib_col).document("latest").get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            print(f"Error fetching calibration state: {str(e)}")
+            return None
+
+    # --- Migration Helpers ---
     
     def save_investment(self, investment_data):
         """Save or update an investment record."""

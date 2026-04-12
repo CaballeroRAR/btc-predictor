@@ -15,13 +15,24 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER
     Returns: dict containing UI-ready visualization data.
     """
     
-    # 1. Attempt Cache Retrieval (Bypassed for Purge/Stabilization)
-    # if not force:
-    #     snapshot = db_mgr.get_latest_snapshot()
-    #     ... (Logic removed to resolve $39k bias)
+    # 1. Attempt Cache Retrieval (Instant Dashboard Performance)
+    if not force:
+        snapshot = db_mgr.get_latest_snapshot()
+        if snapshot:
+            print(f"[{datetime.now()}] [CACHE] Loading high-speed snapshot from Firestore.")
+            return {
+                **snapshot,
+                'is_cached': True,
+                'calculation_time': snapshot.get('timestamp'),
+                'dates': [pd.to_datetime(d) for d in snapshot['dates']],
+                'prices': np.array(snapshot['prices']),
+                'std': np.array(snapshot['std']),
+                'backtest': pd.Series(snapshot['backtest_values'], index=pd.to_datetime(snapshot['backtest_dates'])),
+                'impact_df': pd.read_json(snapshot['impact_df_json']) if snapshot.get('impact_df_json') else None
+            }
 
     # 2. Market Alignment (Sentiment Calibration)
-    prev_state = lifecycle.load_calibration_state()
+    prev_state = lifecycle.load_calibration_state(db_mgr=db_mgr)
     prev_sentiment_drift = prev_state.get('drift_value', 0.0) if prev_state else 0.0
     
     hourly_ref = get_last_hour_price_with_cache()

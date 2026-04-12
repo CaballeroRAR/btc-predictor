@@ -81,8 +81,12 @@ def get_model_info():
     
     return age_days, dt_updated
 
-def save_calibration_state(drift_val, price):
-    """Saves the calculated drift and the price it was based on."""
+def save_calibration_state(drift_val, price, db_mgr=None):
+    """Saves the calculated drift and the price it was based on to Firestore."""
+    from database import DatabaseManager
+    if db_mgr is None:
+        db_mgr = DatabaseManager()
+        
     state = {
         "last_calibration_date": str(datetime.now()),
         "drift_value": float(drift_val),
@@ -90,29 +94,27 @@ def save_calibration_state(drift_val, price):
         "model_path": cloud_config.MODEL_PATH
     }
     
-    os.makedirs(os.path.dirname(CALIBRATION_FILE), exist_ok=True)
-    with open(CALIBRATION_FILE, 'w') as f:
-        json.dump(state, f, indent=4)
+    db_mgr.save_calibration_state(state)
     return state
 
-def load_calibration_state():
-    """Loads the stored drift. Defaults to 0.0 if not found or if Day 0."""
+def load_calibration_state(db_mgr=None):
+    """Loads the stored drift from Firestore. Defaults to 0.0 if not found or if Day 0."""
+    from database import DatabaseManager
+    if db_mgr is None:
+        db_mgr = DatabaseManager()
+        
     age_days, _ = get_model_info()
     
     # If Day 0 (Fresh training), we ignore old drift
     if age_days == 0:
         return {"drift_value": 0.0, "status": "Day 0 (Fresh State)"}
         
-    if not os.path.exists(CALIBRATION_FILE):
-        return {"drift_value": 0.0, "status": "No Calibration Found"}
+    state = db_mgr.get_calibration_state()
+    if state:
+        state["status"] = "Active"
+        return state
         
-    try:
-        with open(CALIBRATION_FILE, 'r') as f:
-            state = json.load(f)
-            state["status"] = "Active"
-            return state
-    except:
-        return {"drift_value": 0.0, "status": "Error Loading State"}
+    return {"drift_value": 0.0, "status": "No Calibration Found"}
 
 # --- Aliases for Backward Compatibility ---
 
