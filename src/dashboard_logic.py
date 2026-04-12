@@ -15,56 +15,27 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER
     Returns: dict containing UI-ready visualization data.
     """
     
-    # 1. Attempt Cache Retrieval
-    if not force:
-        snapshot = db_mgr.get_latest_snapshot()
-        if snapshot:
-            snap_time = snapshot.get("timestamp")
-            if snap_time:
-                # Handle Firestore datetime vs ISO string
-                if isinstance(snap_time, str):
-                    snap_dt = datetime.fromisoformat(snap_time.replace("Z", "+00:00"))
-                else:
-                    snap_dt = snap_time
-                
-                # Cache validity threshold: 1 hour
-                if (datetime.now(timezone.utc) - snap_dt).total_seconds() < 3600:
-                    return {
-                        **snapshot,
-                        'is_cached': True,
-                        'calculation_time': snap_dt,
-                        'dates': [datetime.strptime(d, '%Y-%m-%d') for d in snapshot['dates']],
-                        'prices': np.array(snapshot['prices']),
-                        'std': np.array(snapshot['std']),
-                        'backtest': pd.Series(snapshot['backtest_values'], index=pd.to_datetime(snapshot['backtest_dates']))
-                    }
+    # 1. Attempt Cache Retrieval (Bypassed for Purge/Stabilization)
+    # if not force:
+    #     snapshot = db_mgr.get_latest_snapshot()
+    #     ... (Logic removed to resolve $39k bias)
 
     # 2. Market Alignment (Sentiment Calibration)
-    # Reverting to strict 12-feature schema. 
-    # Performance logs are handled via the Accuracy Plot, not as input features.
     prev_state = lifecycle.load_calibration_state()
     prev_sentiment_drift = prev_state.get('drift_value', 0.0) if prev_state else 0.0
     
     hourly_ref = get_last_hour_price_with_cache()
     latest_price = hourly_ref if hourly_ref else clean_df['Close'].iloc[-1]
     
-    # Standardize column set to exactly 12 features
+    # Standardize column set to exactly 12 features (Macro Gravity Schema)
     expected_cols = [
         'Open', 'High', 'Low', 'Close', 'Volume', 
         'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
-        'Sentiment', 'News_Sentiment'
+        'Sentiment', 'Google_Trends'
     ]
     clean_df = clean_df[expected_cols]
-    
-    # --- TRANSITION SAFETY BRIDGE ---
-    # If the local scaler is still the 14-feature version, pad to prevent ValueError
-    num_expected = scaler.n_features_in_
-    if num_expected == 14:
-        clean_df['Drift_Alignment'] = 0.0
-        clean_df['Drift_Volatility'] = 0.0
-    # --------------------------------
 
-    # Perform Sentiment Calibration (Aligns 10th and 11th signals with Market)
+    # Perform Sentiment Calibration (Aligns psychology with Market)
     drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) 
     avg_sentiment_drift = drift_df['Drift'].mean() if not drift_df.empty else prev_sentiment_drift
     lifecycle.save_calibration_state(avg_sentiment_drift, latest_price)
@@ -75,7 +46,7 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER
     
     # Apply calibrated drift strictly to psychology signals
     recent_data_aligned['Sentiment'] = np.clip(recent_data_aligned['Sentiment'] + avg_sentiment_drift, 0, 100)
-    recent_data_aligned['News_Sentiment'] = np.clip(recent_data_aligned['News_Sentiment'] + avg_sentiment_drift/2, 0, 100)
+    recent_data_aligned['Google_Trends'] = np.clip(recent_data_aligned['Google_Trends'] + avg_sentiment_drift/2, 0, 100)
     
     # Raw Prediction (Base Model)
     raw_mean, _ = engine.predict_with_uncertainty(model, scaler, recent_data_raw, iterations=50)

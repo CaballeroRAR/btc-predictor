@@ -14,7 +14,8 @@ def get_active_model():
     """Download from GCS if missing, then load model and scaler into memory. Context-aware."""
     os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
 
-    # 1. Sync from GCS if local is missing
+    # 1. Sync from GCS if local is missing (Bypassed for Local Stabilization)
+    """
     if not os.path.exists(cloud_config.MODEL_PATH) or not os.path.exists(cloud_config.SCALER_PATH):
         import sys
         is_streamlit = "streamlit" in sys.modules
@@ -30,6 +31,7 @@ def get_active_model():
         else:
             print(f"[{datetime.now()}] [SYSTEM] Headless Sync: Downloading assets...")
             force_sync_from_gcs(check_exists=True)
+    """
 
     # 2. Final Load
     try:

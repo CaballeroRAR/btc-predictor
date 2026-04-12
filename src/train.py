@@ -9,33 +9,19 @@ from data_loader import prepare_merged_dataset, create_sequences
 from model import build_lstm_model
 
 def train_pipeline():
-    # 1. Load Core Market Data
+    # 1. Load Data
     _, df = prepare_merged_dataset()
     
-    # 2. Reverting to Stabilized 12-Feature Architecture
-    print(f"Dataset loaded with {df.shape[1]} features. Enforcing 12 core signals...")
-    
+    # 2. Schema Selection (Strict 12-Feature Macro Gravity)
     expected_cols = [
         'Open', 'High', 'Low', 'Close', 'Volume', 
         'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
-        'Sentiment', 'News_Sentiment'
+        'Sentiment', 'Google_Trends'
     ]
     df = df[expected_cols]
-    
-    # --- DISTRIBUTION AUDIT ---
-    print(f"SANTITY CHECK: Training Price Range: ${df['Close'].min():,.0f} to ${df['Close'].max():,.0f}")
-    if df['Close'].max() > 90000:
-        print("CRITICAL: Outliers detected! Check data_loader filtration logic.")
-    # --------------------------
-    
-    # 3. Scale Features
-    print(f"Final training matrix shape: {df.shape}")
-    print(f"Schema Verification: {list(df.columns)}")
-    print("------------------------------------------\n")
-    
-    if df.empty:
-        raise ValueError("FATAL: Training dataframe is empty. Cannot proceed with fit_transform.")
+    print(f"Training on {df.shape[1]} features. Input Sensitivity: Standard.")
 
+    # 3. Scale Features
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(df.values)
     
@@ -44,7 +30,7 @@ def train_pipeline():
     joblib.dump(scaler, cloud_config.SCALER_PATH)
     print(f"Saved scaler to {cloud_config.SCALER_PATH}")
     
-    # 3. Create Sequences
+    # 3b. Create Sequences
     X, y = create_sequences(scaled_data)
     
     # Split: 80% Train, 20% validation
@@ -57,7 +43,7 @@ def train_pipeline():
     # 4. Build Model
     model = build_lstm_model((X_train.shape[1], X_train.shape[2]))
     
-    # 5. Train
+    # 5. Train (100-Cycle High Precision)
     early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     checkpoint = ModelCheckpoint(cloud_config.MODEL_PATH, save_best_only=True)
     
@@ -72,11 +58,8 @@ def train_pipeline():
     
     print(f"Training complete. Model saved to {cloud_config.MODEL_PATH}")
     
-    # 5. Cloud Integration: Check for Vertex AI or GCP Environment
-    is_cloud = os.environ.get("AIP_MODEL_DIR") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID")
-    
-    if is_cloud:
-        print(f"Cloud environment detected (AIP_MODEL_DIR={os.environ.get('AIP_MODEL_DIR')}). Starting GCS upload...")
+    # Upload to GCS if in cloud environment
+    if os.environ.get("GCP_PROJECT"):
         from google.cloud import storage
         client = storage.Client()
         bucket = client.bucket(cloud_config.BUCKET_NAME)
