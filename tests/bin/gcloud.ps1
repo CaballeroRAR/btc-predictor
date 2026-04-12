@@ -12,3 +12,4 @@ if ($RemainingArgs[0] -eq "run" -and $RemainingArgs[1] -eq "services" -and $Rema
 if ($RemainingArgs[0] -eq "iam" -and $RemainingArgs[1] -eq "service-accounts" -and $RemainingArgs[2] -eq "list") {
     Write-Output "btc-forecaster-sa@btc-predictor-492515.iam.gserviceaccount.com"
 }
+exit 0

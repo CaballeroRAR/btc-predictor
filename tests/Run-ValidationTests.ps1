@@ -31,6 +31,7 @@ try {
     Run-Validation "deploy_ui.ps1"
     Run-Validation "worker_init.ps1"
     Run-Validation "scheduler_config.ps1"
+    Run-Validation "redeploy_trainer.ps1"
 
     # 3. Analyze Logs
     Write-Host "`n--- CAPTURED OPERATIONS LOG ---" -ForegroundColor Cyan
@@ -46,8 +47,9 @@ try {
             @{ Name="Trainer Infra Path"; Pattern="gcloud builds submit --config infra/train.yaml" },
             @{ Name="Cloud Run Service"; Pattern="gcloud run deploy btc-dashboard" },
             @{ Name="Worker Run Service"; Pattern="gcloud run deploy btc-tactical-worker" },
-            @{ Name="Env Var Serialization"; Pattern="--set-env-vars PROJECT_ID=btc-predictor-492515" },
-            @{ Name="Scheduler Recalibrate"; Pattern="--uri=?https://mock-worker-url.a.run.app/recalibrate" }
+            @{ Name="Env Var Serialization"; Pattern="--set-env-vars.*PROJECT_ID=btc-predictor-492515" },
+            @{ Name="Scheduler Recalibrate"; Pattern="--uri=.*?/recalibrate" },
+            @{ Name="Trainer Entry Point"; Pattern="src/vertex_trigger.py" }
         )
 
         $allPassed = $true

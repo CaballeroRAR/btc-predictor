@@ -164,7 +164,21 @@ def fetch_wikipedia_hourly(article="Bitcoin"):
     return pd.DataFrame()
 
 def fetch_google_trends(keyword="Bitcoin", years=cloud_config.YEARS_HISTORY):
-
+    """Fetch Google Trends interest over time (Fallback)."""
+    logger.info(f"Fetching Google Trends for '{keyword}'...")
+    try:
+        from pytrends.request import TrendReq
+        pytrends = TrendReq(hl='en-US', tz=360)
+        pytrends.build_payload([keyword], cat=0, timeframe='today 5-y', gprop='')
+        df = pytrends.interest_over_time()
+        
+        if not df.empty:
+            df = df[[keyword]].rename(columns={keyword: 'Google_Trends'})
+            return df
+    except Exception as e:
+        logger.warning(f"Google Trends fallback failed: {e}")
+        
+    return pd.DataFrame()
 def fetch_sentiment_data():
     """Fetch historical Crypto Fear & Greed Index data."""
     logger.info("Fetching Crypto Fear & Greed Index data...")
