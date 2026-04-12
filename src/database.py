@@ -126,7 +126,28 @@ class DatabaseManager:
             return doc.to_dict()
         return None
 
-    # --- Migration Helpers ---
+    def purge_drift_audit(self, batch_size=500):
+        """Perform a safe, batched purge of the recalibration audit collection."""
+        try:
+            print(f"[DB] Initializing purge of collection: {self.drift_col}...")
+            docs = self.db.collection(self.drift_col).limit(batch_size).stream()
+            deleted = 0
+            
+            batch = self.db.batch()
+            for doc in docs:
+                batch.delete(doc.reference)
+                deleted += 1
+            
+            if deleted > 0:
+                batch.commit()
+                print(f"[DB] SUCCESS: Deleted {deleted} documents from {self.drift_col}")
+                return deleted
+            else:
+                print("[DB] Collection is already empty.")
+                return 0
+        except Exception as e:
+            print(f"[DB] ERROR during purge: {str(e)}")
+            return -1
 
     def migrate_json_investments(self, file_path="data/investments.json"):
         """Migrate local investments.json to Firestore."""
