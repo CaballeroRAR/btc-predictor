@@ -15,7 +15,7 @@ def load_investments():
     except:
         return []
 
-def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, note=""):
+def save_investment(amount, date, price, forecast_prices=None, calibrated_prices=None, std=None, forecast_dates=None, profit_target=2.0, original_withdrawal_date=None, note=""):
     """Append a new investment to the journal with forecast snapshot."""
     investments = load_investments()
     
@@ -31,6 +31,7 @@ def save_investment(amount, date, price, forecast_prices=None, calibrated_prices
         "date": str(date),
         "price": price,
         "profit_target": profit_target,
+        "original_withdrawal_date": str(original_withdrawal_date) if original_withdrawal_date else None,
         "forecast_prices": fp,
         "calibrated_prices": cp,
         "std": sd,

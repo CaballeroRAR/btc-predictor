@@ -245,7 +245,7 @@ if model and scaler and not full_df.empty:
             
             from forecasting_engine import calculate_withdrawal_date
 
-            latest_price_val = base_res.get('last_price', 0.0)
+            # latest_price_val is already defined at the start of the UI loop from full_df
             for inv in reversed(invests):
                 roi = ((latest_price_val / inv['price']) - 1) * 100
                 target_price = inv['price'] * (1 + inv.get('profit_target', 2.0)/100)
@@ -296,10 +296,26 @@ if model and scaler and not full_df.empty:
                         # Actual History since investment (Trimmed to last 15 days)
                         asince = full_df[full_df.index >= pd.to_datetime(inv['date'])].tail(15)
                         if not asince.empty:
-                            m_fig.add_trace(go.Scatter(x=asince.index, y=asince['Close'], name='Actual Price', line=dict(color='white', width=2)))
+                            m_fig.add_trace(go.Scatter(
+                                x=asince.index, y=asince['Close'], 
+                                name='Actual Price', 
+                                line=dict(color='rgba(255, 255, 255, 0.6)', width=1.5)
+                            ))
                         
-                        # Snapshot: Raw vs Calibrated (Now "Market Prediction")
-                        m_fig.add_trace(go.Scatter(x=fd, y=cal_p, name='Market Prediction', mode='lines+markers', line=dict(color='#00ffff', width=2), marker=dict(size=6)))
+                        # Snapshot: Raw vs Calibrated (Now "Market Prediction" - Future Only)
+                        today_dt = datetime.now().date()
+                        mask = [d.date() >= today_dt for d in fd]
+                        filtered_fd = [d for d, m in zip(fd, mask) if m]
+                        filtered_cal_p = [p for p, m in zip(cal_p, mask) if m]
+                        
+                        if filtered_fd:
+                            m_fig.add_trace(go.Scatter(
+                                x=filtered_fd, y=filtered_cal_p, 
+                                name='Market Prediction', 
+                                mode='lines+markers', 
+                                line=dict(color='#00ffff', width=2.5), 
+                                marker=dict(size=7, symbol='diamond')
+                            ))
                         
                         # --- LIVE OVERLAY (The Fix) ---
                         # Overlay the current global forecast dates/prices onto this investment's chart
@@ -323,7 +339,7 @@ if model and scaler and not full_df.empty:
                             )
                             m_fig.add_annotation(
                                 x=x_val, y=0.1, yref='paper', text="Initial Exit", 
-                                showarrow=False, font=dict(color='yellow', size=10), 
+                                showarrow=False, font=dict(color='yellow', size=13), 
                                 textangle=-90, xanchor='left', xshift=10
                             )
                         if current_exit:
@@ -334,7 +350,7 @@ if model and scaler and not full_df.empty:
                             )
                             m_fig.add_annotation(
                                 x=x_val, y=0.9, yref='paper', text="Current Exit", 
-                                showarrow=False, font=dict(color='#00ffff', size=10), 
+                                showarrow=False, font=dict(color='#00ffff', size=13), 
                                 textangle=-90, xanchor='left', xshift=10
                             )
 
