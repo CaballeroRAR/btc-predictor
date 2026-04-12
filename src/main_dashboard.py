@@ -1,3 +1,8 @@
+import os
+import sys
+# Path resolution for industrial architecture
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import streamlit as st
 st.set_page_config(layout="wide", page_title="BTC Pulse Predictor", page_icon="📈")
 import pandas as pd
@@ -12,13 +17,24 @@ load_dotenv()
 import cloud_config
 from data_loader import prepare_merged_dataset
 import investments_manager as inv_mgr
-import model_lifecycle as lifecycle
-import prediction_logger as pred_log
 import ui_blocks as ui
-from database import DatabaseManager
+from src.utils.logger import setup_logger
+from src.facades.forecasting import ForecastingFacade
+from src.facades.simulation_facade import SimulationFacade
+from src.facades.lifecycle_facade import LifecycleFacade
+from src.repositories.asset_repo import AssetRepository
 
-# 2. Logic Service
-import dashboard_logic as logic
+# LEGACY IMPORTS (Kept for parity safety per user request)
+# import prediction_logger as pred_log
+# import dashboard_logic as logic
+# import model_lifecycle as lifecycle
+# from database import DatabaseManager
+
+logger = setup_logger("ui.dashboard")
+forecaster = ForecastingFacade()
+simulator = SimulationFacade()
+lifecycle_manager = LifecycleFacade()
+assets = AssetRepository()
 
 # --- SECURITY GATEWAY ---
 def check_password():
@@ -26,7 +42,7 @@ def check_password():
     if st.session_state.get("authenticated"):
         return True
 
-    PASSWORD = os.getenv("DASHBOARD_PASSWORD", "bitcoin2024")
+    PASSWORD = os.getenv("DASHBOARD_PASSWORD")
 
     # Use centered columns for the login box
     _, center_col, _ = st.columns([1, 1, 1])
@@ -50,8 +66,8 @@ if not check_password():
     st.stop()
 
 # --- INITIALIZATION ---
-db_mgr = DatabaseManager()
-model, scaler = lifecycle.get_active_model()
+model = assets.load_model("btc_lstm_model.h5")
+scaler = assets.load_scaler("scaler.pkl")
 
 # Sidebar: Force Refresh
 st.sidebar.header("Global Controls")
@@ -79,14 +95,13 @@ if model and scaler and not full_df.empty:
     # 3. Sync Actuals (Non-blocking spinner)
     if 'actuals_updated' not in st.session_state:
         with st.spinner("Syncing latest market evaluation..."):
-            pred_log.update_actuals(full_df=full_df)
+            forecaster.sync_market_actuals(full_df=full_df)
             st.session_state['actuals_updated'] = True
 
     # 4. Orchestrate Forecast
     if 'base_forecast' not in st.session_state:
-        # Business logic is decoupled; only UI feedback is here
         with st.spinner("Initializing Latest Market Forecast..."):
-            st.session_state['base_forecast'] = logic.get_base_forecast(db_mgr, model, scaler, clean_df)
+            st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, clean_df)
     
     base_res = st.session_state['base_forecast']
     if base_res.get('is_cached'):
@@ -109,32 +124,24 @@ if model and scaler and not full_df.empty:
         
         # Immediate calculation based on stored base forecast
         if 'results' not in st.session_state:
-            st.session_state['results'] = logic.calculate_withdrawal_plan(base_res, auto_price, profit_target, investment)
+            st.session_state['results'] = simulator.run_investment_simulation(base_res, auto_price, profit_target, investment)
             st.session_state['plan_triggered'] = False
 
         if st.button("Run Simulation", width='stretch'):
-            st.session_state['results'] = logic.calculate_withdrawal_plan(base_res, entry_price, profit_target, investment)
+            st.session_state['results'] = simulator.run_investment_simulation(base_res, entry_price, profit_target, investment)
             st.session_state['plan_triggered'] = True
         
         if st.button("Save this Simulation", width='stretch'):
             r = st.session_state['results']
-            inv_mgr.save_investment(
-                amount=r['investment'], date=selected_date, price=r['entry_price'], 
-                forecast_prices=r.get('raw_prices', r['prices']), 
-                calibrated_prices=r['prices'], 
-                std=r['std'], 
-                forecast_dates=r['dates'], 
-                profit_target=r['target_pct'], 
-                original_withdrawal_date=r['withdrawal_date']
-            )
+            simulator.save_to_journal(r)
             st.success("Investment saved!")
 
         st.divider()
         with st.expander("System Health"):
-            age, last_trained = lifecycle.get_model_info()
-            st.write(f"**Model Age:** {age} days")
-            if last_trained:
-                st.write(f"**Model Updated:** {last_trained.strftime('%Y-%m-%d')}")
+            status = lifecycle_manager.get_system_status()
+            st.write(f"**Model Age:** {status.get('model_age_days', '??')} days")
+            if status.get('last_training_date'):
+                st.write(f"**Model Updated:** {status['last_training_date'].strftime('%Y-%m-%d')}")
             
             # Display Last Prediction Time
             last_run = base_res.get('calculation_time') or base_res.get('timestamp')
@@ -147,9 +154,9 @@ if model and scaler and not full_df.empty:
             
             if st.button("Recalibrate Market Alignment", width='stretch'):
                 with st.spinner("Calibrating Neural Engine (300 Step Optimization)..."):
-                    # Force a fresh market data pull to ensure latest ticker prices are used for drift analysis
+                    # Force a fresh market data pull 
                     _, f_clean = load_market_data(force=True)
-                    st.session_state['base_forecast'] = logic.get_base_forecast(db_mgr, model, scaler, f_clean, force=True)
+                    st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, f_clean, force=True)
                     st.rerun()
 
         st.divider()
@@ -169,11 +176,13 @@ if model and scaler and not full_df.empty:
                 st.write("No active training jobs found in scanned regions.")
 
             st.markdown("### Asset Management")
-            if st.button("Synchronize Model Assets", width='stretch', help="Pull the latest .h5 and .pkl files from GCS. Use this once your Vertex Job is COMPLETED."):
+            if st.button("Synchronize Model Assets", width='stretch'):
                 with st.spinner("Downloading assets from GCS..."):
-                    lifecycle.force_sync_from_gcs(check_exists=False)
-                    st.success("Model assets synchronized. Analytical core updated.")
-                    st.rerun()
+                    if lifecycle_manager.sync_assets(force=True):
+                        st.success("Model assets synchronized. Analytical core updated.")
+                        st.rerun()
+                    else:
+                        st.error("GCS Synchronization failed.")
 
             st.divider()
             # 2. Training Trigger
@@ -221,7 +230,7 @@ if model and scaler and not full_df.empty:
         
         if 'results' in st.session_state:
             st.divider()
-            ui.render_performance_summaries(pred_log.get_performance_stats(), clean_df, latest_price_val)
+            ui.render_performance_summaries(forecaster.get_performance_history(), clean_df, latest_price_val)
             r = st.session_state['results']
             fig.add_trace(go.Scatter(x=r['backtest'].index, y=r['backtest'].values, name='Model (Backtest)', line=dict(color='cyan', dash='dot', width=1)))
             fig.add_trace(go.Scatter(x=r['dates'], y=r['prices']+r['std'], mode='lines', line=dict(width=0), showlegend=False))
@@ -236,10 +245,9 @@ if model and scaler and not full_df.empty:
             if st.session_state.get('plan_triggered'):
                 fig.add_trace(go.Scatter(x=r['dates'], y=[r['target']]*len(r['dates']), name='Target', line=dict(color='red', dash='dash')))
 
-            # --- ENTRY SNAPSHOT OVERLAY (Newest Recalibration Point) ---
-            investments = inv_mgr.load_investments(db_mgr=db_mgr)
+            # --- ENTRY SNAPSHOT OVERLAY ---
+            investments = simulator.get_journal_entries()
             if investments:
-                # Sort by timestamp to find the absolute newest entry
                 latest_inv = sorted(investments, key=lambda x: x.get('timestamp', ''), reverse=True)[0]
                 if 'forecast_prices' in latest_inv and 'forecast_dates' in latest_inv:
                     e_dates = [pd.to_datetime(d) for d in latest_inv['forecast_dates']]

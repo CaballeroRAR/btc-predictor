@@ -24,4 +24,4 @@ COPY . .
 EXPOSE 8080
 
 # Command to run the Streamlit dashboard
-CMD ["streamlit", "run", "src/dashboard.py", "--server.port", "8080", "--server.address", "0.0.0.0"]
+CMD ["streamlit", "run", "src/main_dashboard.py", "--server.port", "8080", "--server.address", "0.0.0.0"]

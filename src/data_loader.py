@@ -9,6 +9,9 @@ from google.cloud import storage
 import io
 import streamlit as st
 import cloud_config as cloud_config
+from src.utils.logger import setup_logger
+
+logger = setup_logger("core.loader")
 
 @st.cache_data(ttl=3600)
 def get_last_hour_price_with_cache():
@@ -23,7 +26,7 @@ def get_last_hour_price_with_cache():
         if not hist.empty:
             return float(hist['Close'].iloc[-1])
     except Exception as e:
-        print(f"TACTICAL: Hourly fetch failed ({e}). Falling back to daily.")
+        logger.warning(f"TACTICAL: Hourly fetch failed ({e}). Falling back to daily.")
     return None
 
 def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
@@ -31,7 +34,7 @@ def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=years * 365)
     
-    print(f"Fetching BTC, ETH, Gold, DXY, and US10Y price data since {start_date.date()}...")
+    logger.info(f"Fetching BTC, ETH, Gold, DXY, and US10Y price data since {start_date.date()}...")
     btc = yf.download("BTC-USD", start=start_date, interval="1d")
     eth = yf.download("ETH-USD", start=start_date, interval="1d")
     gold = yf.download("GC=F", start=start_date, interval="1d")
@@ -76,7 +79,7 @@ def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
 
 def fetch_google_trends(keyword="Bitcoin", years=cloud_config.YEARS_HISTORY):
     """Fetch Google Trends interest over time."""
-    print(f"Fetching Google Trends for '{keyword}'...")
+    logger.info(f"Fetching Google Trends for '{keyword}'...")
     pytrends = TrendReq(hl='en-US', tz=360)
     
     try:
@@ -87,13 +90,13 @@ def fetch_google_trends(keyword="Bitcoin", years=cloud_config.YEARS_HISTORY):
             df = df[[keyword]].rename(columns={keyword: 'Google_Trends'})
             return df
     except Exception as e:
-        print(f"Failed to fetch Google Trends (Rate Limit): {e}")
+        logger.error(f"Failed to fetch Google Trends (Rate Limit): {e}")
         
     return pd.DataFrame()
 
 def fetch_sentiment_data():
     """Fetch historical Crypto Fear & Greed Index data."""
-    print("Fetching Crypto Fear & Greed Index data...")
+    logger.info("Fetching Crypto Fear & Greed Index data...")
     url = "https://api.alternative.me/fng/?limit=0&format=json"
     response = requests.get(url)
     if response.status_code == 200:
@@ -113,7 +116,7 @@ def prepare_merged_dataset(force_refresh=False):
     
     # Speed Optimization: Use local cache if available and not forced
     if not force_refresh and os.path.exists(data_path):
-        print("DELIVERY: Using local merged_data.csv (Steady state)...")
+        logger.info("DELIVERY: Using local merged_data.csv (Steady state)...")
         cache_df = pd.read_csv(data_path, index_col=0, parse_dates=True)
         # Verify 12-feature schema
         if cache_df.shape[1] == 12:
@@ -139,7 +142,7 @@ def prepare_merged_dataset(force_refresh=False):
     # Drop the live (incomplete) today candle to avoid prediction gap anomalies
     merged_df = merged_df.iloc[:-1]
     
-    print(f"Merged dataset shape: {merged_df.shape}")
+    logger.info(f"Merged dataset shape: {merged_df.shape}")
     
     # Update local cache
     os.makedirs(cloud_config.DATA_DIR, exist_ok=True)
@@ -156,7 +159,7 @@ def save_to_gcs(df, filename):
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer)
     blob.upload_from_string(csv_buffer.getvalue(), content_type='text/csv')
-    print(f"Uploaded {filename} to gs://{cloud_config.BUCKET_NAME}")
+    logger.info(f"Uploaded {filename} to gs://{cloud_config.BUCKET_NAME}")
 
 def create_sequences(scaled_data, lookback=cloud_config.LOOKBACK_DAYS, forecast=cloud_config.FORECAST_DAYS):
     """

@@ -1,0 +1,78 @@
+import os
+import pickle
+import joblib
+import keras
+from google.cloud import storage
+from src.repositories.base import BaseRepository
+import cloud_config as cloud_config
+
+class AssetRepository(BaseRepository):
+    """
+    Manages local and cloud-based assets (.h5 models, .pkl scalers).
+    Handles synchronization between GCS and the local runtime environment.
+    """
+    def __init__(self):
+        super().__init__("repositories.assets")
+        self.storage_client = storage.Client(project=cloud_config.PROJECT_ID)
+        self.bucket = self.storage_client.bucket(cloud_config.BUCKET_NAME)
+
+    def save_model(self, model, filename):
+        """Save a Keras model locally."""
+        path = os.path.join(cloud_config.MODEL_DIR, filename)
+        os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
+        model.save(path)
+        self.logger.info(f"Model saved locally to {path}")
+
+    def load_model(self, filename):
+        """Load a Keras model locally."""
+        path = os.path.join(cloud_config.MODEL_DIR, filename)
+        if os.path.exists(path):
+            # compile=False avoids Keras 3 deserialization issues for h5 files
+            model = keras.models.load_model(path, compile=False)
+            self.logger.info(f"Model loaded from {path} (compile=False)")
+            return model
+        self.logger.error(f"Model file not found: {path}")
+        return None
+
+    def save_scaler(self, scaler, filename):
+        """Save a Scikit-learn scaler locally using joblib."""
+        path = os.path.join(cloud_config.MODEL_DIR, filename)
+        os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
+        joblib.dump(scaler, path)
+        self.logger.info(f"Scaler saved locally to {path} (joblib)")
+
+    def load_scaler(self, filename):
+        """Load a Scikit-learn scaler locally using joblib."""
+        path = os.path.join(cloud_config.MODEL_DIR, filename)
+        if os.path.exists(path):
+            scaler = joblib.load(path)
+            self.logger.info(f"Scaler loaded from {path} (joblib)")
+            return scaler
+        self.logger.error(f"Scaler file not found: {path}")
+        return None
+
+    def sync_from_cloud(self, filename):
+        """Pull an asset from GCS to the local environment."""
+        self.logger.info(f"Syncing {filename} from gs://{cloud_config.BUCKET_NAME}")
+        blob = self.bucket.blob(f"{cloud_config.MODEL_DIR}/{filename}")
+        local_path = os.path.join(cloud_config.MODEL_DIR, filename)
+        os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
+        blob.download_to_filename(local_path)
+        self.logger.info(f"Successfully synced {filename}")
+
+    def save(self, data, target):
+        """Generic override from BaseRepository."""
+        pass # Specific methods preferred for models/scalers
+
+    def get(self, target):
+        """Generic override from BaseRepository."""
+        pass
+
+    def delete(self, target):
+        """Generic override from BaseRepository."""
+        path = os.path.join(cloud_config.MODEL_DIR, target)
+        if os.path.exists(path):
+            os.remove(path)
+            self.logger.warning(f"Deleted local asset: {path}")
+            return True
+        return False

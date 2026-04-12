@@ -1,0 +1,45 @@
+2026-04-11 23:26:15 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:26:16 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:26:16 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:26:17 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:26:17 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:26:30 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:26:32 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:26:32 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:26:33 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:26:33 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:26:35 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:26:36 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:26:36 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:26:39 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:26:39 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:26:40 | ERROR    | repositories.assets | Model file not found: models\model.h5
+2026-04-11 23:29:43 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:29:44 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:29:44 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:29:45 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:29:45 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:29:54 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:29:55 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:29:55 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:29:56 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:29:56 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:29:57 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:29:59 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:29:59 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:30:00 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:30:00 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:30:36 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:30:37 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:30:37 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:30:38 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:30:38 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:30:39 | INFO     | repositories.assets | Model loaded from models\btc_lstm_model.h5 (compile=False)
+2026-04-11 23:31:30 | INFO     | repositories.firestore | Initializing repositories.firestore
+2026-04-11 23:31:31 | INFO     | repositories.firestore | Firestore Client connected to project: btc-predictor-492515, db: btc-pred-db
+2026-04-11 23:31:31 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:31:32 | INFO     | facades.forecasting | ForecastingFacade successfully initialized
+2026-04-11 23:31:32 | INFO     | repositories.assets | Initializing repositories.assets
+2026-04-11 23:31:33 | INFO     | repositories.assets | Model loaded from models\btc_lstm_model.h5 (compile=False)
+2026-04-11 23:31:33 | INFO     | repositories.assets | Scaler loaded from models\scaler.pkl (joblib)
+2026-04-11 23:31:33 | INFO     | core.loader | DELIVERY: Using local merged_data.csv (Steady state)...

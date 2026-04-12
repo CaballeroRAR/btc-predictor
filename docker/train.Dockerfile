@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
 COPY src/ /app/src/
 
 # Entry point for training
-CMD ["python", "src/train.py"]
+CMD ["python", "src/main_trainer.py"]

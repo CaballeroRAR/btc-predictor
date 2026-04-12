@@ -1,5 +1,8 @@
 import os
 import sys
+# Path resolution for industrial architecture
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from datetime import datetime
 import uvicorn
@@ -8,13 +11,18 @@ import uvicorn
 sys.path.append(os.path.dirname(__file__))
 
 import data_loader
-import dashboard_logic
 import vertex_trigger
-import model_lifecycle as lifecycle
-from database import DatabaseManager
+from src.facades.forecasting import ForecastingFacade
+from src.facades.lifecycle_facade import LifecycleFacade
+from src.repositories.asset_repo import AssetRepository
+from src.utils.logger import setup_logger
+
+logger = setup_logger("worker.main")
+forecaster = ForecastingFacade()
+lifecycle_manager = LifecycleFacade()
+assets = AssetRepository()
 
 app = FastAPI(title="BTC Predictor Tactical Worker")
-db_mgr = DatabaseManager()
 
 @app.get("/health")
 def health():
@@ -31,15 +39,16 @@ async def recalibrate():
     try:
         # 1. Fetch Fresh Market Data and Assets
         full_df, clean_df = data_loader.prepare_merged_dataset()
-        model, scaler = lifecycle.get_active_model()
+        model = assets.load_model("btc_lstm_model.h5")
+        scaler = assets.load_scaler("scaler.pkl")
         
         # 2. Trigger Headless Recalibration (SYSTEM source)
-        results = dashboard_logic.get_base_forecast(
-            db_mgr=db_mgr, 
+        results = forecaster.get_forecast(
             model=model, 
             scaler=scaler, 
-            clean_df=clean_df, 
-            source="SYSTEM"
+            clean_df=clean_df,
+            force=True,
+            source="SYSTEM_AUTO"
         )
         
         return {
@@ -59,13 +68,10 @@ async def retrain(background_tasks: BackgroundTasks):
     """
     try:
         # Retrieve SA from environment (injected during Cloud Run deploy)
-        sa_email = os.getenv("SERVICE_ACCOUNT")
-        job = vertex_trigger.trigger_training_job(service_account=sa_email)
+        res = lifecycle_manager.launch_retraining()
         return {
             "status": "training_launched",
-            "job_name": job.display_name,
-            "job_id": job.resource_name,
-            "running_as": sa_email
+            "job_id": res['job_id']
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
