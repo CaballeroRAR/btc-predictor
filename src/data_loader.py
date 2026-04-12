@@ -4,7 +4,6 @@ import requests
 import os
 from datetime import datetime, timedelta
 import numpy as np
-from pytrends.request import TrendReq
 from google.cloud import storage
 import io
 import streamlit as st
