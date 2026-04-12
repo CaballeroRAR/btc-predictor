@@ -204,11 +204,24 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
             ), secondary_y=True)
 
     # LAYER 2: TACTICAL MONITOR (Live Pulsar for Today)
-    # 1. Today's Market Price (Static Dot - 5% bigger than historical)
+    # 0. Intraday Bridge (Connection between yesterday and today)
+    today_marker = datetime.now().date()
+    if not eval_df.empty:
+        last_hist_date = eval_df.index[-1]
+        last_hist_price = eval_df['actual_price'].iloc[-1]
+        fig.add_trace(go.Scatter(
+            x=[last_hist_date, today_marker], y=[last_hist_price, live_price],
+            mode='lines', name='Intraday Bridge',
+            line=dict(color='rgba(255, 255, 255, 0.3)', width=1, dash='dot'),
+            showlegend=False,
+            hoverinfo='skip'
+        ), secondary_y=False)
+
+    # 1. Today's Market Price (Forced to current calendar day)
     fig.add_trace(go.Scatter(
-        x=[today_date], y=[live_price],
+        x=[today_marker], y=[live_price],
         mode='markers', name='Live Price',
-        marker=dict(color='#00ff00', size=10.5, symbol='circle')
+        marker=dict(color='#00ff00', size=12, symbol='circle', line=dict(color='white', width=1))
     ), secondary_y=False)
 
     # 2. Today's Prediction (Live Predicted Closing Price) & Live Deviation
