@@ -117,18 +117,67 @@ def fetch_wikipedia_views(article="Bitcoin", years=cloud_config.YEARS_HISTORY):
         
     return pd.DataFrame()
 
+def fetch_rss_sentiment():
+    """
+    Fetch the latest crypto headlines via RSS and compute a 24-hour sentiment average.
+    Uses vaderSentiment (already in requirements).
+    """
+    import feedparser
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    
+    feeds = [
+        "https://cointelegraph.com/rss",
+        "https://www.coindesk.com/arc/outboundfeeds/rss/"
+    ]
+    
+    logger.info("Fetching Latest Bitcoin News via RSS...")
+    analyzer = SentimentIntensityAnalyzer()
+    all_headlines = []
+    
+    for url in feeds:
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries:
+                if "bitcoin" in entry.title.lower() or "btc" in entry.title.lower():
+                    all_headlines.append(entry.title)
+        except Exception as e:
+            logger.warning(f"RSS Feed Failed ({url}): {e}")
+            
+    if not all_headlines:
+        logger.warning("No Bitcoin headlines found in latest RSS feeds.")
+        return 0.0 # Neural sentiment
+        
+    scores = [analyzer.polarity_scores(h)['compound'] for h in all_headlines]
+    avg_sentiment = sum(scores) / len(scores)
+    
+    logger.info(f"Analyzed {len(all_headlines)} headlines. Final Sentiment Weight: {avg_sentiment:+.2f}")
+    return avg_sentiment
+
 def fetch_curiosity_signal():
     """
-    Orchestrates curiosity ingestion with fallback.
-    Favors Wikipedia for industrial stability.
+    Orchestrates the Resilient Pulse Index (RPI).
+    Combines Wikipedia Retail Interest (Base) with RSS Sentiment (Multiplier).
     """
-    # 1. Primary: Wikipedia (Stateless & Stable)
+    # 1. Base Logic: Wikipedia Daily Views (Stable)
     wiki_df = fetch_wikipedia_views()
-    if not wiki_df.empty:
-        return wiki_df
+    if wiki_df.empty:
+        logger.error("SYSTEM CRITICAL: Wikipedia baseline failed. Falling back to safe defaults.")
+        # Fallback values to keep 12-feature schema operational
+        return pd.DataFrame({"Google_Trends": [50.0]})
         
-    # 2. Fallback: Google Trends (Brittle)
-    return fetch_google_trends()
+    # 2. Sentiment Overlay: RSS Mentions
+    sentiment_weight = fetch_rss_sentiment()
+    
+    # 3. Hybridization
+    # We apply the sentiment as a multiplier to the search interest.
+    # Positive sentiment boosts the 'interest' signal, negative sentiment dampens it.
+    wiki_df['Google_Trends'] = wiki_df['Google_Trends'] * (1 + sentiment_weight)
+    
+    # 4. Final Normalization (Ensure 0-100 range for LSTM parity)
+    # Note: Wikipedia Views are already 0-100, we clip just in case sentiment pushed it out.
+    wiki_df['Google_Trends'] = wiki_df['Google_Trends'].clip(0, 100)
+    
+    return wiki_df
 
 def fetch_wikipedia_hourly(article="Bitcoin"):
     """
@@ -163,22 +212,6 @@ def fetch_wikipedia_hourly(article="Bitcoin"):
         
     return pd.DataFrame()
 
-def fetch_google_trends(keyword="Bitcoin", years=cloud_config.YEARS_HISTORY):
-    """Fetch Google Trends interest over time (Fallback)."""
-    logger.info(f"Fetching Google Trends for '{keyword}'...")
-    try:
-        from pytrends.request import TrendReq
-        pytrends = TrendReq(hl='en-US', tz=360)
-        pytrends.build_payload([keyword], cat=0, timeframe='today 5-y', gprop='')
-        df = pytrends.interest_over_time()
-        
-        if not df.empty:
-            df = df[[keyword]].rename(columns={keyword: 'Google_Trends'})
-            return df
-    except Exception as e:
-        logger.warning(f"Google Trends fallback failed: {e}")
-        
-    return pd.DataFrame()
 def fetch_sentiment_data():
     """Fetch historical Crypto Fear & Greed Index data."""
     logger.info("Fetching Crypto Fear & Greed Index data...")

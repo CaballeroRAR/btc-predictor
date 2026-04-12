@@ -27,7 +27,7 @@ class ForecastingFacade:
         self.firestore_repo = FirestoreRepository()
         self.assets = AssetRepository()
 
-    def get_forecast(self, model, scaler, clean_df, force=False, source="USER"):
+    def get_forecast(self, model, scaler, clean_df, force=False, source="USER", include_impact=True):
         """
         Executes the full forecasting pipeline with caching.
         """
@@ -51,9 +51,8 @@ class ForecastingFacade:
         hourly_price = get_last_hour_price_with_cache()
         reference_price = hourly_price if hourly_price else clean_df['Close'].iloc[-1]
 
-        # Calculate new drift using calibration engine
-        # (Using legacy_calib for now to maintain parity)
-        drift_df = legacy_calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3)
+        # Calculate new drift using native calibration logic
+        drift_df = self._calibrate_market_drift(model, scaler, clean_df)
         avg_drift = drift_df['Drift'].mean() if not drift_df.empty else prev_drift
         
         # Persist calibration state
@@ -166,6 +165,45 @@ class ForecastingFacade:
         # UI Chart expects 'actual_price' to be filled for historical metrics
         # The prediction_repo handles this matching during sync_market_actuals
         return df
+
+
+    def _calibrate_market_drift(self, model, scaler, clean_df, depth=3):
+        """
+        Native implementation of market alignment.
+        Calculates the mean prediction error (drift) over the last N days.
+        """
+        logger.info(f"Targeting Market Alignment (Depth: {depth} days)...")
+        results = []
+        
+        # Calculate drift over the last 'depth' days
+        for i in range(depth, 0, -1):
+            try:
+                # Target date (T) and input window (T-lookback)
+                idx = len(clean_df) - i
+                if idx < cloud_config.LOOKBACK_DAYS: continue
+                
+                target_date = clean_df.index[idx]
+                actual_price = clean_df['Close'].iloc[idx]
+                
+                # Window for prediction
+                window = clean_df.iloc[idx - cloud_config.LOOKBACK_DAYS : idx]
+                pred_mean, _ = self.strategy.predict(model, scaler, window)
+                
+                drift = actual_price - pred_mean
+                # Normalize drift relative to Sentiment/Trends scale (roughly)
+                # This is a heuristic to convert USD error to a '心理' (psychological) offset
+                norm_drift = np.sign(drift) * min(abs(drift) / 500, 10.0) 
+                
+                results.append({
+                    'Date': target_date,
+                    'Actual': actual_price,
+                    'Predicted': pred_mean,
+                    'Drift': norm_drift
+                })
+            except Exception as e:
+                logger.warning(f"Calibration step failed for index -{i}: {e}")
+                
+        return pd.DataFrame(results)
 
     def _format_snapshot(self, snapshot):
         """Helper to convert Firestore snapshot into runtime-ready dict."""

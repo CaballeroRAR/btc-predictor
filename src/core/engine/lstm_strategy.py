@@ -21,7 +21,7 @@ class LSTMMonteCarloStrategy(PredictionStrategy):
         data_values = data.values.copy()
         if ignored_indices:
             self.logger.warning(f"Feature ablation active for indices: {ignored_indices}")
-            for idx in indices:
+            for idx in ignored_indices:
                 data_values[:, idx] = np.mean(data_values[:, idx])
 
         # Preprocessing
