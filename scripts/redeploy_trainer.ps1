@@ -1,7 +1,7 @@
 # Targeted Deployment: BTC Trainer Only
 $ProjectId = "btc-predictor-492515"
 
-Write-Host "1. Rebuilding BTC Trainer Image (14-Feature Harden)..." -ForegroundColor Cyan
+Write-Host "1. Rebuilding BTC Trainer Image..." -ForegroundColor Cyan
 gcloud builds submit --config infra/train.yaml . --project $ProjectId
 
 if ($LASTEXITCODE -eq 0) {

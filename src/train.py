@@ -13,8 +13,6 @@ def train_pipeline():
     _, df = prepare_merged_dataset()
     
     # 2. Reverting to Stabilized 12-Feature Architecture
-    # We are removing the experimental 'Closed-Loop' drift enrichment to restore
-    # baseline stability until the unit normalization is fully validated.
     print(f"Dataset loaded with {df.shape[1]} features. Enforcing 12 core signals...")
     
     expected_cols = [
@@ -24,11 +22,15 @@ def train_pipeline():
     ]
     df = df[expected_cols]
     
+    # --- DISTRIBUTION AUDIT ---
+    print(f"SANTITY CHECK: Training Price Range: ${df['Close'].min():,.0f} to ${df['Close'].max():,.0f}")
+    if df['Close'].max() > 90000:
+        print("CRITICAL: Outliers detected! Check data_loader filtration logic.")
+    # --------------------------
+    
     # 3. Scale Features
     print(f"Final training matrix shape: {df.shape}")
     print(f"Schema Verification: {list(df.columns)}")
-    print("\n--- Feature Drift Signal Distribution ---")
-    print(df[['Drift_Alignment', 'Drift_Volatility']].describe().iloc[1:3]) # Mean and Std
     print("------------------------------------------\n")
     
     if df.empty:
@@ -62,7 +64,7 @@ def train_pipeline():
     history = model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
-        epochs=50,
+        epochs=100,
         batch_size=32,
         callbacks=[early_stop, checkpoint],
         verbose=1
