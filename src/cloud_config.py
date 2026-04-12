@@ -3,7 +3,11 @@ import os
 # GCP Project Details
 PROJECT_ID = "btc-predictor-492515"
 REGION = "us-central1"
-BUCKET_NAME = "btc-predictor-492515_cloudbuild"
+BUCKET_NAME = "btc_predictor_models"
+
+# Image URIs
+TRAINING_IMAGE_URI = f"gcr.io/{PROJECT_ID}/btc-trainer"
+DASHBOARD_IMAGE_URI = f"gcr.io/{PROJECT_ID}/btc-dashboard"
 
 # Paths
 DATA_DIR = "data"

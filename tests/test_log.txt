@@ -1,5 +1,5 @@
-gcloud storage cp models/btc_lstm_model.h5 gs://btc-predictor-492515_cloudbuild/models/btc_lstm_model.h5
-gcloud storage cp models/scaler.pkl gs://btc-predictor-492515_cloudbuild/models/scaler.pkl
+gcloud storage cp models/btc_lstm_model.h5 gs://btc_predictor_models/models/btc_lstm_model.h5
+gcloud storage cp models/scaler.pkl gs://btc_predictor_models/models/scaler.pkl
 gcloud builds submit --config infra/train.yaml . --project btc-predictor-492515
 gcloud config set project btc-predictor-492515
 gcloud builds submit --config infra/dashboard.yaml .

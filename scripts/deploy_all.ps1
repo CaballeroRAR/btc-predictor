@@ -10,7 +10,7 @@
 
 $PROJECT_ID = "btc-predictor-492515"
 $REGION = "us-central1"
-$BUCKET = "btc-predictor-492515_cloudbuild"
+$BUCKET = "btc_predictor_models"
 $DASHBOARD_IMAGE = "gcr.io/$PROJECT_ID/btc-dashboard"
 $TRAINER_IMAGE = "gcr.io/$PROJECT_ID/btc-trainer"
 

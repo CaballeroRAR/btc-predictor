@@ -1,58 +1,58 @@
 # Configuration
-$ProjectId = "btc-predictor-492515"
-$ServiceName = "btc-tactical-worker"
-$Region = "us-central1"
-$SaName = "btc-forecaster-sa"
-$SaEmail = "$SaName@$ProjectId.iam.gserviceaccount.com"
-$ModelsBucket = "btc_predictor_models"
+$PROJECT_ID = "btc-predictor-492515"
+$SERVICE_NAME = "btc-tactical-worker"
+$REGION = "us-central1"
+$SA_NAME = "btc-forecaster-sa"
+$SA_EMAIL = "$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+$MODELS_BUCKET = "btc_predictor_models"
 
-Write-Host "Step 0: Auto-Focusing Project Context ($ProjectId)..." -ForegroundColor Cyan
-gcloud config set project $ProjectId
-gcloud auth application-default set-quota-project $ProjectId --quiet
+Write-Host "Step 0: Auto-Focusing Project Context ($PROJECT_ID)..." -ForegroundColor Cyan
+gcloud config set project $PROJECT_ID
+gcloud auth application-default set-quota-project $PROJECT_ID --quiet
 
-Write-Host "Step 1: Creating/Verifying Dedicated Service Account ($SaName)..." -ForegroundColor Cyan
-$SaCheck = gcloud iam service-accounts list --filter="email:$SaEmail" --format="value(email)" --quiet
+Write-Host "Step 1: Creating/Verifying Dedicated Service Account ($SA_NAME)..." -ForegroundColor Cyan
+$SaCheck = gcloud iam service-accounts list --filter="email:$SA_EMAIL" --format="value(email)" --quiet
 if (!$SaCheck) {
-    Write-Host "Creating service account $SaName..." -ForegroundColor Yellow
-    gcloud iam service-accounts create $SaName --display-name="BTC Predictor Forecaster Bot" --quiet
+    Write-Host "Creating service account $SA_NAME..." -ForegroundColor Yellow
+    gcloud iam service-accounts create $SA_NAME --display-name="BTC Predictor Forecaster Bot" --quiet
 } else {
-    Write-Host "Service account $SaEmail already exists. Continuing..." -ForegroundColor Green
+    Write-Host "Service account $SA_EMAIL already exists. Continuing..." -ForegroundColor Green
 }
 
 Write-Host "Step 2: Provisioning Storage & Roles (Principle of Least Privilege)..." -ForegroundColor Cyan
 # Ensure bucket exists (using -b for definitive existence check)
-$BucketCheck = gsutil ls -b gs://$ModelsBucket 2>$null
+$BucketCheck = gsutil ls -b gs://$MODELS_BUCKET 2>$null
 if (!$BucketCheck) {
-    Write-Host "Bucket not found. Provisioning gs://$ModelsBucket..." -ForegroundColor Yellow
-    gsutil mb -l $Region gs://$ModelsBucket
+    Write-Host "Bucket not found. Provisioning gs://$MODELS_BUCKET..." -ForegroundColor Yellow
+    gsutil mb -l $REGION gs://$MODELS_BUCKET
 } else {
-    Write-Host "Bucket gs://$ModelsBucket already exists. Continuing..." -ForegroundColor Green
+    Write-Host "Bucket gs://$MODELS_BUCKET already exists. Continuing..." -ForegroundColor Green
 }
 
 # 1. Firestore access
-gcloud projects add-iam-policy-binding $ProjectId --member="serviceAccount:$SaEmail" --role="roles/datastore.user" --quiet
+gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$SA_EMAIL" --role="roles/datastore.user" --quiet
 # 2. Vertex AI access
-gcloud projects add-iam-policy-binding $ProjectId --member="serviceAccount:$SaEmail" --role="roles/aiplatform.user" --quiet
+gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$SA_EMAIL" --role="roles/aiplatform.user" --quiet
 # 3. Bucket access for models
-gcloud storage buckets add-iam-policy-binding gs://$ModelsBucket --member="serviceAccount:$SaEmail" --role="roles/storage.objectAdmin" --quiet
+gcloud storage buckets add-iam-policy-binding gs://$MODELS_BUCKET --member="serviceAccount:$SA_EMAIL" --role="roles/storage.objectAdmin" --quiet
 # 4. Permission to pass identity to Vertex AI
-gcloud projects add-iam-policy-binding $ProjectId --member="serviceAccount:$SaEmail" --role="roles/iam.serviceAccountUser" --quiet
+gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$SA_EMAIL" --role="roles/iam.serviceAccountUser" --quiet
 # 5. Permission to invoke Cloud Run (for Secure Scheduler calls)
-gcloud projects add-iam-policy-binding $ProjectId --member="serviceAccount:$SaEmail" --role="roles/run.invoker" --quiet
+gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$SA_EMAIL" --role="roles/run.invoker" --quiet
 
 Write-Host "Step 3: Building and Deploying Secure Dockerized Worker..." -ForegroundColor Cyan
 # A. Build the worker image using the specific YAML config
 gcloud builds submit --config infra/worker.yaml .
 
 # B. Deploy the worker image
-gcloud run deploy $ServiceName `
-    --image gcr.io/$ProjectId/$ServiceName `
-    --region $Region `
+gcloud run deploy $SERVICE_NAME `
+    --image gcr.io/$PROJECT_ID/$SERVICE_NAME `
+    --region $REGION `
     --platform managed `
     --no-allow-unauthenticated `
-    --service-account $SaEmail `
+    --service-account $SA_EMAIL `
     --memory 2Gi `
-    --set-env-vars "PROJECT_ID=$ProjectId,SERVICE_ACCOUNT=$SaEmail,BUCKET_NAME=$ModelsBucket" `
+    --set-env-vars "PROJECT_ID=$PROJECT_ID,SERVICE_ACCOUNT=$SA_EMAIL,BUCKET_NAME=$MODELS_BUCKET" `
     --quiet
 
 # Verification Gate: Ensure deployment succeeded
@@ -61,7 +61,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-$WorkerUrl = gcloud run services describe $ServiceName --platform managed --region $Region --format 'value(status.url)'
+$WorkerUrl = gcloud run services describe $SERVICE_NAME --platform managed --region $REGION --format 'value(status.url)'
 Write-Host "Worker successfully deployed at: $WorkerUrl" -ForegroundColor Green
 
 Write-Host ""
@@ -73,8 +73,8 @@ gcloud scheduler jobs create http btc-hourly-recalibrate `
     --schedule="0 * * * *" `
     --uri="$WorkerUrl/recalibrate" `
     --http-method=POST `
-    --location=$Region `
-    --oidc-service-account-email=$SaEmail `
+    --location=$REGION `
+    --oidc-service-account-email=$SA_EMAIL `
     --oidc-token-audience=$WorkerUrl `
     --quiet
 
@@ -84,10 +84,13 @@ gcloud scheduler jobs create http btc-daily-retrain `
     --schedule="0 0 * * *" `
     --uri="$WorkerUrl/retrain" `
     --http-method=POST `
-    --location=$Region `
-    --oidc-service-account-email=$SaEmail `
+    --location=$REGION `
+    --oidc-service-account-email=$SA_EMAIL `
     --oidc-token-audience=$WorkerUrl `
     --quiet
+
+Write-Host ""
+Write-Host "Deployment Complete. Your system is now autonomous and secured." -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Deployment Complete. Your system is now autonomous and secured." -ForegroundColor Green
