@@ -212,6 +212,27 @@ def prepare_merged_dataset(force_refresh=False):
     sentiment_df = fetch_sentiment_data()
     trends_df = fetch_curiosity_signal()
     
+    # --- HYBRID STITCH: Recovering "Yesterday" (Apr 11) if missing ---
+    yesterday = (datetime.now() - timedelta(days=1)).date()
+    if not price_df.empty and price_df.index[-1].date() < yesterday:
+        logger.info(f"GAP DETECTED: Recovering finalized data for {yesterday}...")
+        try:
+            ticker = yf.Ticker("BTC-USD")
+            # Fetch 2d/1h to find the close for yesterday
+            hist_h = ticker.history(period="2d", interval="1h")
+            # Resample to Daily and take the close of yesterday
+            yesterday_dt = pd.to_datetime(yesterday)
+            if yesterday_dt in hist_h.index.normalize():
+                y_close = hist_h[hist_h.index.normalize() == yesterday_dt]['Close'].iloc[-1]
+                y_row = price_df.iloc[-1:].copy()
+                y_row.index = [yesterday_dt]
+                y_row['Close'] = y_close
+                # Note: Other columns (DXY, etc) will be ffilled during merge
+                price_df = pd.concat([price_df, y_row])
+                logger.info(f"STITCH SUCCESS: Added {yesterday} @ ${y_close:,.2f}")
+        except Exception as e:
+            logger.warning(f"STITCH FAILED: Missing yesterday could not be recovered ({e})")
+
     # Align indexes (Price data is the master timeline)
     merged_df = price_df.join(sentiment_df, how='left')
     
@@ -224,8 +245,16 @@ def prepare_merged_dataset(force_refresh=False):
     merged_df.ffill(inplace=True)
     merged_df.dropna(inplace=True)
     
-    # Drop the live (incomplete) today candle to avoid prediction gap anomalies
-    merged_df = merged_df.iloc[:-1]
+    # --- TEMPORAL GUARD: Intelligent Truncation ---
+    # Only drop the last row if it represents "Today" and it is currently early (incomplete)
+    today = datetime.now().date()
+    current_hour = datetime.now().hour
+    
+    if merged_df.index[-1].date() == today:
+        # If it's early (e.g. before 10 AM local), drop the partial today bar
+        if current_hour < 10:
+            logger.info("GUARD: Dropping early (incomplete) today candle.")
+            merged_df = merged_df.iloc[:-1]
     
     logger.info(f"Merged dataset shape: {merged_df.shape}")
     

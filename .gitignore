@@ -7,7 +7,7 @@ __pycache__/
 # Environment & Secrets
 .env
 .env.*
-
+logs/*.log
 # Data & Cache (Track only template if needed, ignore all live data)
 data/*.csv
 data/*.json
