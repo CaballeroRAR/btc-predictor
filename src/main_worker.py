@@ -39,8 +39,21 @@ async def recalibrate():
     try:
         # 1. Fetch Fresh Market Data and Assets
         full_df, clean_df = data_loader.prepare_merged_dataset()
-        model = assets.load_model("btc_lstm_model.h5")
-        scaler = assets.load_scaler("scaler.pkl")
+        
+        # Ensure local artifacts are synchronized from GCS
+        model_filename = "btc_lstm_model.h5"
+        scaler_filename = "scaler.pkl"
+        
+        if not os.path.exists(os.path.join("models", model_filename)):
+            logger.info(f"Model {model_filename} missing locally. Pulling from cloud...")
+            assets.sync_from_cloud(model_filename)
+            
+        if not os.path.exists(os.path.join("models", scaler_filename)):
+            logger.info(f"Scaler {scaler_filename} missing locally. Pulling from cloud...")
+            assets.sync_from_cloud(scaler_filename)
+            
+        model = assets.load_model(model_filename)
+        scaler = assets.load_scaler(scaler_filename)
         
         # 2. Trigger Headless Recalibration (SYSTEM source)
         results = forecaster.get_forecast(
