@@ -58,21 +58,40 @@ def train_pipeline():
     
     print(f"Training complete. Model saved to {cloud_config.MODEL_PATH}")
     
-    # Upload to GCS if in cloud environment
-    if os.environ.get("GCP_PROJECT"):
-        from google.cloud import storage
-        client = storage.Client()
-        bucket = client.bucket(cloud_config.BUCKET_NAME)
-        
-        # Upload Model
-        model_blob = bucket.blob(f"{cloud_config.MODEL_DIR}/btc_lstm_model.h5")
-        model_blob.upload_from_filename(cloud_config.MODEL_PATH)
-        
-        # Upload Scaler
-        scaler_blob = bucket.blob(f"{cloud_config.MODEL_DIR}/scaler.pkl")
-        scaler_blob.upload_from_filename(cloud_config.SCALER_PATH)
-        
-        print("Uploaded model and scaler to GCS.")
+    # --- ROBUST CLOUD EXPORT ---
+    # Detect if we are running in Vertex AI or a general GCP environment
+    aip_model_dir = os.environ.get("AIP_MODEL_DIR")
+    is_cloud = os.environ.get("GCP_PROJECT") or aip_model_dir
+    
+    if is_cloud:
+        print(f"\n[GCS] Initializing Cloud Persistence (Target: {cloud_config.BUCKET_NAME})...")
+        try:
+            from google.cloud import storage
+            client = storage.Client(project=os.environ.get("GCP_PROJECT"))
+            bucket = client.bucket(cloud_config.BUCKET_NAME)
+            
+            # Scenario A: Vertex AI Staging (Official Handshake)
+            if aip_model_dir:
+                print(f"[GCP] Vertex AI context detected via AIP_MODEL_DIR: {aip_model_dir}")
+                # We still perform a direct upload to our production bucket for simplicity and UI consistency
+            
+            # Upload Model Weights
+            model_blob = bucket.blob(f"{cloud_config.MODEL_DIR}/btc_lstm_model.h5")
+            print(f"[GCS] Uploading model weights to {model_blob.name}...")
+            model_blob.upload_from_filename(cloud_config.MODEL_PATH)
+            
+            # Upload Scaler (CRITICAL for inference)
+            scaler_blob = bucket.blob(f"{cloud_config.MODEL_DIR}/scaler.pkl")
+            print(f"[GCS] Uploading scaler to {scaler_blob.name}...")
+            scaler_blob.upload_from_filename(cloud_config.SCALER_PATH)
+            
+            print(f"[{datetime.now()}] [GCS] SUCCESS: All production assets persisted to gs://{cloud_config.BUCKET_NAME}")
+            
+        except Exception as e:
+            print(f"[{datetime.now()}] [ERROR] Cloud export failed: {str(e)}")
+            # Do not raise here to allow the job to finish, but the log will signal failure
+    else:
+        print("\n[LOCAL] Skipping shadow-sync (Not in GCP environment).")
 
 if __name__ == "__main__":
     train_pipeline()
