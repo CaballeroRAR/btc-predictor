@@ -1,15 +1,36 @@
+# Core Python
 venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-data/*.csv
+
+# Environment & Secrets
 .env
+.env.*
+
+# Data & Cache (Track only template if needed, ignore all live data)
+data/*.csv
+data/*.json
+data/hourly_cache.json
+data/merged_data.csv
+data/prediction_history.csv
+data/calibration_state.json
+
+# Model Binary Files (Stored in GCS, not Git)
+models/*.h5
+models/*.pkl
+
+# Workspace & Agentic Context
+.vscode/
+.idea/
 .gemini/
-notebooks/
+.agent/
+scratch/
+
+# Cloud & Deployment
 .gcloudignore
 cloudbuild.*.yaml
 Dockerfile.*
-linkedin_showcase.md
-.agent/
-data/agent_memory.json
+
+# Documentation/Showcase
 linkedin_showcase.md
