@@ -49,6 +49,17 @@ class LifecycleFacade:
             logger.error(f"Sync failed: {str(e)}")
             return False
 
+    def publish_assets(self):
+        """Pushes local assets to GCP (Used by Trainer)."""
+        logger.info("Initiating cloud publishing of local assets...")
+        try:
+            self.assets.sync_to_cloud("btc_lstm_model.h5")
+            self.assets.sync_to_cloud("scaler.pkl")
+            return True
+        except Exception as e:
+            logger.error(f"Publishing failed: {str(e)}")
+            return False
+
     def launch_retraining(self):
         """Spawns a Cloud Training job."""
         logger.warning("Initiating Vertex AI Training Trigger")

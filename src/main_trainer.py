@@ -72,10 +72,12 @@ def train_pipeline():
     
     if is_cloud:
         logger.info(f"Initializing Cloud Persistence for gs://{cloud_config.BUCKET_NAME}")
-        # Note: We keep this logic internal to trainer for now or move to lifecycle_facade
-        # lifecycle_manager will handle downloads, but uploads are usually Trainer's job.
-        # However, for consistency, we'll use the repository.
-        lifecycle_manager.sync_assets(force=True)
+        # Use our new publishing logic to push the fresh model/scaler to GCP
+        success = lifecycle_manager.publish_assets()
+        if success:
+            logger.info("SUCCESS: Training artifacts published to GCS.")
+        else:
+            logger.error("FAILURE: Training artifacts could not be published.")
     else:
         logger.info("Local environment detected. Skipping GCS sync.")
 

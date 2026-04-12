@@ -60,6 +60,19 @@ class AssetRepository(BaseRepository):
         blob.download_to_filename(local_path)
         self.logger.info(f"Successfully synced {filename}")
 
+    def sync_to_cloud(self, filename):
+        """Push a local asset to GCS."""
+        local_path = os.path.join(cloud_config.MODEL_DIR, filename)
+        if not os.path.exists(local_path):
+            self.logger.error(f"Cannot sync to cloud: Local file missing at {local_path}")
+            return False
+            
+        self.logger.info(f"Uploading {filename} to gs://{cloud_config.BUCKET_NAME}")
+        blob = self.bucket.blob(f"{cloud_config.MODEL_DIR}/{filename}")
+        blob.upload_from_filename(local_path)
+        self.logger.info(f"Successfully uploaded {filename} to GCS")
+        return True
+
     def save(self, data, target):
         """Generic override from BaseRepository."""
         pass # Specific methods preferred for models/scalers
