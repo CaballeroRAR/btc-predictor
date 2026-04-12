@@ -39,44 +39,43 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER
                         'backtest': pd.Series(snapshot['backtest_values'], index=pd.to_datetime(snapshot['backtest_dates']))
                     }
 
-    # 2. Market Alignment (Drift Analysis)
-    # Using last finished hour price for stability if available
+    # 2. Market Alignment (Sentiment Calibration)
+    # Reverting to strict 12-feature schema. 
+    # Performance logs are handled via the Accuracy Plot, not as input features.
+    prev_state = lifecycle.load_calibration_state()
+    prev_sentiment_drift = prev_state.get('drift_value', 0.0) if prev_state else 0.0
+    
     hourly_ref = get_last_hour_price_with_cache()
     latest_price = hourly_ref if hourly_ref else clean_df['Close'].iloc[-1]
     
-    drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) 
-    avg_drift = drift_df['Drift'].mean() if not drift_df.empty else 0.0
-    lifecycle.save_calibration_state(avg_drift, latest_price)
-
-    # 3. Model & Feature Alignment
-    # model and scaler are passed as arguments
-    # For inference, we use the session's current drift as the 'Live' alignment
-    clean_df['Drift_Alignment'] = avg_drift
-    clean_df['Drift_Volatility'] = 0.0 # Intraday volatility is 0 for single-point inference
-    
-    # Ensure column order matches training: adapt to 12 or 14 features
+    # Standardize column set to exactly 12 features
     expected_cols = [
         'Open', 'High', 'Low', 'Close', 'Volume', 
         'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
-        'Sentiment', 'News_Sentiment', 'Drift_Alignment', 'Drift_Volatility'
+        'Sentiment', 'News_Sentiment'
     ]
+    clean_df = clean_df[expected_cols]
     
-    # --- DYNAMIC FEATURE BRIDGE ---
+    # --- TRANSITION SAFETY BRIDGE ---
+    # If the local scaler is still the 14-feature version, pad to prevent ValueError
     num_expected = scaler.n_features_in_
-    if num_expected == 12:
-        # Backward compatibility with legacy model assets
-        active_cols = expected_cols[:12]
-    else:
-        # Forward compatibility with newer 14-feature models
-        active_cols = expected_cols
-    
-    clean_df = clean_df[active_cols]
+    if num_expected == 14:
+        clean_df['Drift_Alignment'] = 0.0
+        clean_df['Drift_Volatility'] = 0.0
+    # --------------------------------
 
+    # Perform Sentiment Calibration (Aligns 10th and 11th signals with Market)
+    drift_df = calib.batch_calibrate_sentiment(model, scaler, clean_df, depth=3) 
+    avg_sentiment_drift = drift_df['Drift'].mean() if not drift_df.empty else prev_sentiment_drift
+    lifecycle.save_calibration_state(avg_sentiment_drift, latest_price)
 
     # 4. Forecast Execution
     recent_data_raw = clean_df.tail(cloud_config.LOOKBACK_DAYS).copy()
     recent_data_aligned = recent_data_raw.copy()
-    recent_data_aligned['Sentiment'] = np.clip(recent_data_aligned['Sentiment'] + avg_drift, 0, 100)
+    
+    # Apply calibrated drift strictly to psychology signals
+    recent_data_aligned['Sentiment'] = np.clip(recent_data_aligned['Sentiment'] + avg_sentiment_drift, 0, 100)
+    recent_data_aligned['News_Sentiment'] = np.clip(recent_data_aligned['News_Sentiment'] + avg_sentiment_drift/2, 0, 100)
     
     # Raw Prediction (Base Model)
     raw_mean, _ = engine.predict_with_uncertainty(model, scaler, recent_data_raw, iterations=50)
@@ -104,7 +103,7 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER
         'std': tight_std.tolist(),
         'backtest_values': backtest_series.values.tolist(),
         'backtest_dates': [d.strftime('%Y-%m-%d') for d in backtest_series.index],
-        'avg_drift': avg_drift,
+        'avg_drift': avg_sentiment_drift,
         'impact_df_json': impact_df.to_json() if impact_df is not None else None
     }
     db_mgr.save_system_snapshot(res_to_save)
@@ -129,7 +128,7 @@ def get_base_forecast(db_mgr, model, scaler, clean_df, force=False, source="USER
         'prices': mean,
         'std': tight_std,
         'backtest': backtest_series,
-        'avg_drift': avg_drift,
+        'avg_drift': avg_sentiment_drift,
         'impact_df': impact_df
     }
 

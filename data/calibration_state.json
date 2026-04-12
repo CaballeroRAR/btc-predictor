@@ -1,6 +1,6 @@
 {
-    "last_calibration_date": "2026-04-11 18:29:04.054527",
-    "drift_value": 35.768985360860825,
-    "reference_price": 72979.046875,
+    "last_calibration_date": "2026-04-11 20:12:27.102301",
+    "drift_value": -14.0,
+    "reference_price": 71666.203125,
     "model_path": "models\\btc_lstm_model.h5"
 }

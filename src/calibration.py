@@ -36,26 +36,23 @@ def calculate_daily_drift(model, scaler, input_data, actual_price, iterations=50
     
     # 3. Optimization Variable: Drift for the Sentiment column (Index 10)
     drift = tf.Variable(0.0, trainable=True, dtype=tf.float32)
-    
     optimizer = keras.optimizers.Adam(learning_rate=lr)
     
-    # Keras 3 Stability: Define a static call for gradient calculation
-    @tf.function(reduce_retracing=True)
-    def call_model(X_in):
-        return model(X_in, training=False)
-    
-    for _ in range(iterations):
+    # 4. Optimization Loop
+    # Increased iterations to 100 to ensure convergence with 14-feature complexity
+    for _ in range(100):
         with tf.GradientTape() as tape:
-            # Sentiment is the 11th column (index 10 in our 12-feature pipeline)
-            mask = np.zeros((1, cloud_config.LOOKBACK_DAYS, num_features))
-            mask[:, :, 10] = 1.0 
-            mask = tf.cast(mask, tf.float32)
+            # Sentiment is at index 10 in our standardized schemas
+            # We create a mask that only applies the drift to that specific column
+            indices = [[0, t, 10] for t in range(cloud_config.LOOKBACK_DAYS)]
+            updates = [drift] * cloud_config.LOOKBACK_DAYS
             
-            X_calib = X_orig + (drift * mask)
+            mask = tf.scatter_nd(indices, updates, [1, cloud_config.LOOKBACK_DAYS, num_features])
+            X_calib = X_orig + mask
             
             # Predict only the first step (Tomorrow's Price)
-            preds = call_model(X_calib)
-            pred_price = preds[0, 0] # Index 0 of the 30-day forecast
+            preds = model(X_calib, training=False)
+            pred_price = preds[0, 0] 
             
             loss = tf.square(pred_price - target_price_scaled)
             

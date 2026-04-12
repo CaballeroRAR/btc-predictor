@@ -12,37 +12,24 @@ def train_pipeline():
     # 1. Load Core Market Data
     _, df = prepare_merged_dataset()
     
-    # 2. Ingest Closed-Loop Enrichment (SYSTEM Drift Logs)
-    from database import DatabaseManager
-    db = DatabaseManager()
-    drift_logs = db.get_live_drift_history(days=30)
+    # 2. Reverting to Stabilized 12-Feature Architecture
+    # We are removing the experimental 'Closed-Loop' drift enrichment to restore
+    # baseline stability until the unit normalization is fully validated.
+    print(f"Dataset loaded with {df.shape[1]} features. Enforcing 12 core signals...")
     
-    if drift_logs:
-        print(f"Enriching model with {len(drift_logs)} intraday system snapshots...")
-        drift_df = pd.DataFrame(drift_logs)
-        drift_df['date'] = pd.to_datetime(drift_df['forecast_date']).dt.date
-        
-        # Aggregate hourly drift into daily indicators
-        daily_drift = drift_df.groupby('date').agg(
-            Drift_Alignment=('drift_pct', 'mean'),
-            Drift_Volatility=('drift_pct', 'std')
-        ).fillna(0)
-        
-        # Align indexes and merge
-        df_dates = df.index.date
-        df.index = df_dates
-        df = df.join(daily_drift, how='left').fillna(0)
-        
-        # Restore DatetimeIndex for subsequent processing
-        df.index = pd.to_datetime(df.index)
-    else:
-        # Fallback for cold-start: initialize features with 0
-        df['Drift_Alignment'] = 0.0
-        df['Drift_Volatility'] = 0.0
+    expected_cols = [
+        'Open', 'High', 'Low', 'Close', 'Volume', 
+        'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
+        'Sentiment', 'News_Sentiment'
+    ]
+    df = df[expected_cols]
     
     # 3. Scale Features
     print(f"Final training matrix shape: {df.shape}")
     print(f"Schema Verification: {list(df.columns)}")
+    print("\n--- Feature Drift Signal Distribution ---")
+    print(df[['Drift_Alignment', 'Drift_Volatility']].describe().iloc[1:3]) # Mean and Std
+    print("------------------------------------------\n")
     
     if df.empty:
         raise ValueError("FATAL: Training dataframe is empty. Cannot proceed with fit_transform.")
