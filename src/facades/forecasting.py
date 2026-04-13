@@ -10,7 +10,7 @@ from src.repositories.asset_repo import AssetRepository
 from src.utils.logger import setup_logger
 import cloud_config as cloud_config
 from src.core.analysis import calculate_signal_impact
-from data_loader import get_last_hour_price_with_cache
+from src.core.data_orchestrator import data_orchestrator
 
 logger = setup_logger("facades.forecasting")
 
@@ -229,6 +229,24 @@ class ForecastingFacade:
                 logger.warning(f"Calibration step failed for index -{i}: {e}")
                 
         return pd.DataFrame(results)
+
+    def get_live_market_context(self):
+        """
+        Orchestrates real-time tactical overlays for the UI.
+        Encapsulates Live price and Curiosity Pulse logic.
+        """
+        live_price = data_orchestrator.adapter.fetch_price_data(years=1/365).iloc[-1]['Close']
+        wiki_pulse = data_orchestrator.adapter.fetch_hourly_views()
+        
+        interest_pulse = 0.0
+        if not wiki_pulse.empty:
+            interest_pulse = float(wiki_pulse['Curiosity_Hourly'].iloc[-1])
+            
+        return {
+            "live_price": live_price,
+            "interest_pulse": interest_pulse,
+            "timestamp": datetime.now(timezone.utc)
+        }
 
     def _format_snapshot(self, snapshot):
         """Helper to convert Firestore snapshot into runtime-ready dict."""

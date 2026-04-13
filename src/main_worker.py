@@ -1,7 +1,10 @@
 import os
 import sys
 # Path resolution for industrial architecture
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_path = os.path.join(root_path, "src")
+sys.path.append(root_path)
+sys.path.append(src_path)
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from datetime import datetime
@@ -10,17 +13,13 @@ import uvicorn
 # Ensure src is in python path
 sys.path.append(os.path.dirname(__file__))
 
-import data_loader
-import vertex_trigger
 from src.facades.forecasting import ForecastingFacade
 from src.facades.lifecycle_facade import LifecycleFacade
-from src.repositories.asset_repo import AssetRepository
 from src.utils.logger import setup_logger
 
 logger = setup_logger("worker.main")
 forecaster = ForecastingFacade()
 lifecycle_manager = LifecycleFacade()
-assets = AssetRepository()
 
 app = FastAPI(title="BTC Predictor Tactical Worker")
 
@@ -38,22 +37,9 @@ async def recalibrate():
     """
     try:
         # 1. Fetch Fresh Market Data and Assets
-        full_df, clean_df = data_loader.prepare_merged_dataset()
-        
-        # Ensure local artifacts are synchronized from GCS
-        model_filename = "btc_lstm_model.h5"
-        scaler_filename = "scaler.pkl"
-        
-        if not os.path.exists(os.path.join("models", model_filename)):
-            logger.info(f"Model {model_filename} missing locally. Pulling from cloud...")
-            assets.sync_from_cloud(model_filename)
-            
-        if not os.path.exists(os.path.join("models", scaler_filename)):
-            logger.info(f"Scaler {scaler_filename} missing locally. Pulling from cloud...")
-            assets.sync_from_cloud(scaler_filename)
-            
-        model = assets.load_model(model_filename)
-        scaler = assets.load_scaler(scaler_filename)
+        full_df = lifecycle_manager.load_dataset()
+        model, scaler = lifecycle_manager.load_model_assets()
+        clean_df = full_df # Standardized by orchestrator
         
         # 2. Trigger Headless Recalibration (SYSTEM source)
         results = forecaster.get_forecast(

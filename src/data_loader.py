@@ -9,13 +9,21 @@ import io
 import streamlit as st
 import cloud_config as cloud_config
 from src.utils.logger import setup_logger
+from src.adapters.market_adapter import IndustrialMarketAdapter
+from src.core.data_orchestrator import data_orchestrator
+from src.core.standardizer import MarketStandardizer
 
 logger = setup_logger("core.loader")
+adapter = IndustrialMarketAdapter()
 
 @st.cache_data(ttl=3600)
 def get_last_hour_price_with_cache():
+    """Industrial Proxy: Fetches hourly price via MarketAdapter."""
+    return adapter.fetch_price_data(years=1/365).iloc[-1]['Close']
+
+def _legacy_v1_get_last_hour_price_with_cache():
     """
-    Utility: Fetch the most recent hourly Close price for drift analysis.
+    [LEGACY] Utility: Fetch the most recent hourly Close price for drift analysis.
     Cached for 1 hour to prevent API rate limiting.
     """
     try:
@@ -29,7 +37,11 @@ def get_last_hour_price_with_cache():
     return None
 
 def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
-    """Fetch historical BTC, ETH, Gold, and Oil data for ratio analysis."""
+    """Industrial Proxy: Fetches historical prices via MarketAdapter."""
+    return adapter.fetch_price_data(years=years)
+
+def _legacy_v1_fetch_btc_data(years=cloud_config.YEARS_HISTORY):
+    """[LEGACY] Fetch historical BTC, ETH, Gold, and Oil data for ratio analysis."""
     end_date = datetime.now()
     start_date = end_date - timedelta(days=years * 365)
     
@@ -77,8 +89,12 @@ def fetch_btc_data(years=cloud_config.YEARS_HISTORY):
     return df
 
 def fetch_wikipedia_views(article="Bitcoin", years=cloud_config.YEARS_HISTORY):
+    """Industrial Proxy: Fetches Wikipedia pageviews via MarketAdapter."""
+    return adapter.fetch_wikipedia_views(article=article, years=years)
+
+def _legacy_v1_fetch_wikipedia_views(article="Bitcoin", years=cloud_config.YEARS_HISTORY):
     """
-    Fetch historical Wikipedia pageviews as a resilient alternative to Google Trends.
+    [LEGACY] Fetch historical Wikipedia pageviews as a resilient alternative to Google Trends.
     Stateless, no API key required.
     """
     logger.info(f"Fetching Wikimedia Pageviews for '{article}'...")
@@ -117,8 +133,12 @@ def fetch_wikipedia_views(article="Bitcoin", years=cloud_config.YEARS_HISTORY):
     return pd.DataFrame()
 
 def fetch_rss_sentiment():
+    """Industrial Proxy: Fetches RSS sentiment via MarketAdapter."""
+    return adapter.fetch_rss_sentiment()
+
+def _legacy_v1_fetch_rss_sentiment():
     """
-    Fetch the latest crypto headlines via RSS and compute a 24-hour sentiment average.
+    [LEGACY] Fetch the latest crypto headlines via RSS and compute a 24-hour sentiment average.
     Uses vaderSentiment (already in requirements).
     """
     import feedparser
@@ -179,8 +199,12 @@ def fetch_curiosity_signal():
     return wiki_df
 
 def fetch_wikipedia_hourly(article="Bitcoin"):
+    """Industrial Proxy: Fetches hourly views via MarketAdapter."""
+    return adapter.fetch_hourly_views(article=article)
+
+def _legacy_v1_fetch_wikipedia_hourly(article="Bitcoin"):
     """
-    Fetch the last 48 hours of pageviews with 1-hour resolution.
+    [LEGACY] Fetch the last 48 hours of pageviews with 1-hour resolution.
     Used for tactical drift analysis and smart recalibration.
     """
     logger.info(f"Fetching Wikimedia HOURLY Pulse for '{article}'...")
@@ -212,7 +236,11 @@ def fetch_wikipedia_hourly(article="Bitcoin"):
     return pd.DataFrame()
 
 def fetch_sentiment_data():
-    """Fetch historical Crypto Fear & Greed Index data."""
+    """Industrial Proxy: Fetches F&G sentiment via MarketAdapter."""
+    return adapter.fetch_fng_sentiment()
+
+def _legacy_v1_fetch_sentiment_data():
+    """[LEGACY] Fetch historical Crypto Fear & Greed Index data."""
     logger.info("Fetching Crypto Fear & Greed Index data...")
     url = "https://api.alternative.me/fng/?limit=0&format=json"
     response = requests.get(url)
@@ -228,7 +256,12 @@ def fetch_sentiment_data():
         raise Exception("Failed to fetch sentiment data")
 
 def prepare_merged_dataset(force_refresh=False):
-    """Merge price, sentiment, and trends data."""
+    """Industrial Proxy: Orchestrates dataset preparation via DataOrchestrator."""
+    df = data_orchestrator.prepare_dataset(force_refresh=force_refresh)
+    return df, df # Return both for dashboard compatibility
+
+def _legacy_v1_prepare_merged_dataset(force_refresh=False):
+    """[LEGACY] Merge price, sentiment, and trends data."""
     data_path = os.path.join(cloud_config.DATA_DIR, "merged_data.csv")
     
     # Speed Optimization: Use local cache if available and not forced
@@ -308,8 +341,12 @@ def save_to_gcs(df, filename):
     logger.info(f"Uploaded {filename} to gs://{cloud_config.BUCKET_NAME}")
 
 def create_sequences(scaled_data, lookback=cloud_config.LOOKBACK_DAYS, forecast=cloud_config.FORECAST_DAYS):
+    """Industrial Proxy: Delegates sequence creation to MarketStandardizer."""
+    return MarketStandardizer.create_sequences(scaled_data, lookback, forecast)
+
+def _legacy_v1_create_sequences(scaled_data, lookback=cloud_config.LOOKBACK_DAYS, forecast=cloud_config.FORECAST_DAYS):
     """
-    Create multi-step sequences for LSTM (Original 9-feature Raw Price logic).
+    [LEGACY] Create multi-step sequences for LSTM (Original 9-feature Raw Price logic).
     """
     X, y = [], []
     for i in range(len(scaled_data) - lookback - forecast + 1):

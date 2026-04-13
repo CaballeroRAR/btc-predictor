@@ -1,7 +1,10 @@
 import os
 import sys
 # Path resolution for industrial architecture
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_path = os.path.join(root_path, "src")
+sys.path.append(root_path)
+sys.path.append(src_path)
 
 import streamlit as st
 st.set_page_config(layout="wide", page_title="BTC Pulse Predictor", page_icon="📈")
@@ -14,20 +17,17 @@ from dotenv import load_dotenv
 
 # 1. Configuration & Secrets
 load_dotenv()
-import cloud_config
-from data_loader import prepare_merged_dataset, get_last_hour_price_with_cache, fetch_wikipedia_hourly
-import ui_blocks as ui
+import src.cloud_config as cloud_config
+import src.ui_blocks as ui
 from src.utils.logger import setup_logger
 from src.facades.forecasting import ForecastingFacade
 from src.facades.simulation_facade import SimulationFacade
 from src.facades.lifecycle_facade import LifecycleFacade
-from src.repositories.asset_repo import AssetRepository
 
 logger = setup_logger("ui.dashboard")
 forecaster = ForecastingFacade()
 simulator = SimulationFacade()
 lifecycle_manager = LifecycleFacade()
-assets = AssetRepository()
 # --- SECURITY GATEWAY ---
 def check_password():
     """Returns True if the user had the correct password."""
@@ -58,8 +58,7 @@ if not check_password():
     st.stop()
 
 # --- INITIALIZATION ---
-model = assets.load_model("btc_lstm_model.h5")
-scaler = assets.load_scaler("scaler.pkl")
+model, scaler = lifecycle_manager.load_model_assets()
 
 # Sidebar: Force Refresh
 st.sidebar.header("Global Controls")
@@ -79,9 +78,10 @@ if 'last_market_sync' not in st.session_state:
 
 @st.cache_data
 def load_market_data(force=False):
-    return prepare_merged_dataset(force_refresh=force)
+    return lifecycle_manager.load_dataset(force=force)
 
-full_df, clean_df = load_market_data(force=force_refresh)
+full_df = load_market_data(force=force_refresh)
+clean_df = full_df # In this architecture, orchestrator handles cleaning
 
 # UI Layout
 st.title("BTC Profit and Sentiment Predictor")
@@ -106,25 +106,13 @@ if model and scaler and not full_df.empty:
         if ts:
             st.caption(f"Loaded from cache (Generated {ts.strftime('%H:%M')} UTC)")
 
-    # 5. Market Metrics Initialization (Moved up for sidebar defaults)
-    latest_price_val = full_df['Close'].iloc[-1]
-    latest_date_val = full_df.index[-1]
+    # 5. Market Metrics Initialization
+    live_ctx = forecaster.get_live_market_context()
+    latest_price_val = live_ctx['live_price']
+    interest_pulse = live_ctx['interest_pulse']
+    latest_date_val = datetime.now() 
     
-    # Live Overlay: Fetch absolute latest ticker price for UI display
-    live_price = get_last_hour_price_with_cache()
-    if live_price and live_price != latest_price_val:
-        latest_price_val = live_price
-        latest_date_val = datetime.now() # Update timestamp to current session
-        logger.info(f"UI Overlay: Live price updated to ${latest_price_val:,.2f}")
-    
-    # Curiosity Overlay: Fetch hourly pulse
-    wiki_pulse = fetch_wikipedia_hourly()
-    interest_pulse = 0.0
-    if not wiki_pulse.empty:
-        # Calculate recent pulse relative to yesterday's avg
-        latest_hourly = wiki_pulse['Curiosity_Hourly'].iloc[-1]
-        interest_pulse = float(latest_hourly)
-        logger.info(f"UI Overlay: Curiosity pulse updated to {interest_pulse:,.0f} views/hr")
+    logger.info(f"UI Overlay Updated: Price=${latest_price_val:,.2f} | Pulse={interest_pulse:,.0f}")
 
     # 6. Sidebar Simulation Controls
     with st.sidebar:
@@ -192,15 +180,11 @@ if model and scaler and not full_df.empty:
 
         st.divider()
         with st.expander("Model Management"):
-            import vertex_trigger as vertex
-            
             # 1. Job Telemetry (Active Monitoring)
             st.markdown("### Training Status")
-            active_jobs = vertex.get_latest_training_jobs(limit=1)
-            if active_jobs:
-                job = active_jobs[0]
-                status_txt = vertex.get_status_summary(job)
-                st.info(status_txt)
+            active_job = lifecycle_manager.get_active_training_jobs(limit=1)
+            if active_job:
+                st.info(active_job["status"])
                 if st.button("Refresh Job Status", width='stretch'):
                     st.rerun()
             else:
@@ -224,7 +208,7 @@ if model and scaler and not full_df.empty:
             if st.button("Launch Vertex AI Model Training", disabled=not confirm_training, width='stretch'):
                 with st.spinner("Provisioning Vertex AI CustomJob..."):
                     try:
-                        new_job = vertex.trigger_training_job()
+                        lifecycle_manager.launch_retraining()
                         st.success("Vertex AI Training Job successfully triggered!")
                         st.rerun()
                     except Exception as e:

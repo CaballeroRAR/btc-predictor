@@ -1,8 +1,7 @@
-import os
 from datetime import datetime
+import src.cloud_config as cloud_config
+from src.core.data_orchestrator import data_orchestrator
 from src.repositories.asset_repo import AssetRepository
-from src.utils.logger import setup_logger
-import cloud_config as cloud_config
 import vertex_trigger as vertex
 
 logger = setup_logger("facades.lifecycle")
@@ -35,6 +34,23 @@ class LifecycleFacade:
                 "scaler": cloud_config.SCALER_PATH
             }
         }
+
+    def load_model_assets(self):
+        """
+        Loads and returns the LSTM model and scaler.
+        Performs a dynamic GCS sync if artifacts are missing locally.
+        """
+        if not os.path.exists(cloud_config.MODEL_PATH) or not os.path.exists(cloud_config.SCALER_PATH):
+            logger.info("Critical artifacts missing. Initiating automatic cloud synchronization...")
+            self.sync_assets(force=True)
+            
+        model = self.assets.load_model("btc_lstm_model.h5")
+        scaler = self.assets.load_scaler("scaler.pkl")
+        return model, scaler
+
+    def load_dataset(self, force=False):
+        """Proxy to DataOrchestrator for dataset retrieval."""
+        return data_orchestrator.prepare_dataset(force_refresh=force)
 
     def sync_assets(self, force=False):
         """Synchronizes model and scaler from GCP."""
@@ -69,3 +85,16 @@ class LifecycleFacade:
         except Exception as e:
             logger.error(f"Training trigger failed: {str(e)}")
             raise e
+
+    def get_active_training_jobs(self, limit=1):
+        """Returns telemetry for recent Cloud training jobs."""
+        jobs = vertex.get_latest_training_jobs(limit=limit)
+        if not jobs:
+            return None
+            
+        job = jobs[0]
+        return {
+            "id": job.name,
+            "status": vertex.get_status_summary(job),
+            "raw_job": job
+        }

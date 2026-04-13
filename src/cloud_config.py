@@ -1,31 +1,29 @@
-import os
+from src.core.config_service import config_service
 
-# GCP Project Details
-PROJECT_ID = "btc-predictor-492515"
-REGION = "us-central1"
-BUCKET_NAME = "btc_predictor_models"
-FIRESTORE_DATABASE = "btc-pred-db"
+# Industrial Compatibility Layer
+# All global constants are now proxied via the ConfigService singleton.
 
-# Image URIs
-TRAINING_IMAGE_URI = f"gcr.io/{PROJECT_ID}/btc-trainer"
-DASHBOARD_IMAGE_URI = f"gcr.io/{PROJECT_ID}/btc-dashboard"
+PROJECT_ID = config_service.PROJECT_ID
+REGION = config_service.REGION
+BUCKET_NAME = config_service.BUCKET_NAME
+FIRESTORE_DATABASE = config_service.FIRESTORE_DATABASE
 
-# Paths
-DATA_DIR = "data"
-MODEL_DIR = "models"
-SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
-MODEL_PATH = os.path.join(MODEL_DIR, "btc_lstm_model.h5")
+TRAINING_IMAGE_URI = config_service.TRAINING_IMAGE_URI
+DASHBOARD_IMAGE_URI = config_service.DASHBOARD_IMAGE_URI
 
-# Dataset Configuration
-LOOKBACK_DAYS = 60
-FORECAST_DAYS = 30  # Increased for "Time-to-Profit" prediction
-YEARS_HISTORY = 6
+DATA_DIR = config_service.DATA_DIR
+MODEL_DIR = config_service.MODEL_DIR
+SCALER_PATH = config_service.SCALER_PATH
+MODEL_PATH = config_service.MODEL_PATH
 
-# Vertex AI Training Config
-MACHINE_TYPE = "n1-standard-4"
-ACCELERATOR_TYPE = None
-ACCELERATOR_COUNT = 0
+LOOKBACK_DAYS = config_service.LOOKBACK_DAYS
+FORECAST_DAYS = config_service.FORECAST_DAYS
+YEARS_HISTORY = config_service.YEARS_HISTORY
 
-def get_storage_path(filename, folder=DATA_DIR):
-    """Utility to format GCS paths."""
-    return f"gs://{BUCKET_NAME}/{folder}/{filename}"
+MACHINE_TYPE = config_service.MACHINE_TYPE
+ACCELERATOR_TYPE = config_service.ACCELERATOR_TYPE
+ACCELERATOR_COUNT = config_service.ACCELERATOR_COUNT
+
+def get_storage_path(filename, folder=None):
+    """Refactored Proxy to ConfigService."""
+    return config_service.get_storage_path(filename, folder)
