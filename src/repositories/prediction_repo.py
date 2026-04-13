@@ -1,5 +1,6 @@
 from datetime import datetime
 from src.repositories.firestore_repo import FirestoreRepository
+from src.core.schemas import PredictionSchema
 import pandas as pd
 
 class PredictionRepository(FirestoreRepository):
@@ -11,22 +12,23 @@ class PredictionRepository(FirestoreRepository):
         self.collection = "daily_predictions"
 
     def log_prediction_batch(self, forecast_dates, predicted_prices):
-        """Append a batch of new predictions."""
+        """Append a batch of new predictions with Pydantic validation."""
         sim_run_date = datetime.now().strftime("%Y%m%d")
         
         for d, p in zip(forecast_dates, predicted_prices):
             forecast_date_str = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)
             document_id = f"{sim_run_date}_{forecast_date_str}"
             
-            data = {
-                "sim_run_date": sim_run_date,
-                "forecast_date": forecast_date_str,
-                "predicted_price": float(p),
-                "actual_price": None
-            }
-            self.save(data, self.collection, document_id)
+            # Instantiate Schema (Auto-validates types)
+            prediction = PredictionSchema(
+                sim_run_date=sim_run_date,
+                forecast_date=forecast_date_str,
+                predicted_price=float(p)
+            )
+            
+            self.save(prediction.model_dump(), self.collection, document_id)
         
-        self.logger.info(f"Logged {len(forecast_dates)} predictions for run {sim_run_date}")
+        self.logger.info(f"Logged {len(forecast_dates)} validated predictions for run {sim_run_date}")
 
     def update_actual_price_matching(self, forecast_date: str, actual_price: float):
         """Update all prediction records targeting a specific date with its actual closing price."""

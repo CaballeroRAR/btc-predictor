@@ -2,9 +2,10 @@ import os
 import pickle
 import joblib
 import keras
+import hashlib
 from google.cloud import storage
 from src.repositories.base import BaseRepository
-import cloud_config as cloud_config
+import src.cloud_config as cloud_config
 
 class AssetRepository(BaseRepository):
     """
@@ -23,13 +24,20 @@ class AssetRepository(BaseRepository):
         model.save(path)
         self.logger.info(f"Model saved locally to {path}")
 
-    def load_model(self, filename):
-        """Load a Keras model locally."""
+    def load_model(self, filename, expected_hash=None):
+        """Load a Keras model locally with optional integrity check."""
         path = os.path.join(cloud_config.MODEL_DIR, filename)
         if os.path.exists(path):
+            if expected_hash:
+                actual_hash = self.calculate_hash(path)
+                if actual_hash != expected_hash:
+                    self.logger.error(f"CORRUPTION DETECTED: {filename} hash mismatch!")
+                    self.logger.error(f"Expected: {expected_hash} | Actual: {actual_hash}")
+                    return None
+            
             # compile=False avoids Keras 3 deserialization issues for h5 files
             model = keras.models.load_model(path, compile=False)
-            self.logger.info(f"Model loaded from {path} (compile=False)")
+            self.logger.info(f"Model loaded from {path} (Integrity Verified)")
             return model
         self.logger.error(f"Model file not found: {path}")
         return None
@@ -89,3 +97,15 @@ class AssetRepository(BaseRepository):
             self.logger.warning(f"Deleted local asset: {path}")
             return True
         return False
+
+    def calculate_hash(self, path):
+        """Compute SHA-256 hash of a file."""
+        sha256_hash = hashlib.sha256()
+        try:
+            with open(path, "rb") as f:
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            return sha256_hash.hexdigest()
+        except Exception as e:
+            self.logger.error(f"Hash calculation failed: {str(e)}")
+            return ""

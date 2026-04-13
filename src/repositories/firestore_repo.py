@@ -14,7 +14,7 @@ class FirestoreRepository(BaseRepository):
         self.logger.info(f"Firestore Client connected to project: {cloud_config.PROJECT_ID}, db: {db_id}")
 
     def save(self, data: dict, collection: str, document_id: str = None):
-        """Standardized save operation with industrial logging."""
+        """Standardized save operation with industrial logging and local fallback."""
         try:
             self.logger.info(f"Saving document to {collection}/{document_id or 'auto-gen'}")
             col_ref = self.db.collection(collection)
@@ -28,22 +28,22 @@ class FirestoreRepository(BaseRepository):
             self.logger.debug(f"Successfully committed data to {collection}")
             return doc_ref.id
         except Exception as e:
-            self.logger.error(f"Fatal error during Firestore save: {str(e)}")
-            raise
+            self.logger.error(f"Firestore save failed: {str(e)}. Triggering Resilience Layer.")
+            return self._save_local(data, collection, document_id)
 
     def get(self, collection: str, document_id: str):
-        """Retrieve a single document."""
+        """Retrieve a single document with local fallback."""
         try:
             self.logger.info(f"Fetching document {collection}/{document_id}")
             doc = self.db.collection(collection).document(document_id).get()
             if doc.exists:
                 self.logger.debug(f"Document found: {document_id}")
                 return doc.to_dict()
-            self.logger.warning(f"Document not found: {document_id}")
-            return None
+            self.logger.warning(f"Document not found in cloud: {document_id}")
         except Exception as e:
-            self.logger.error(f"Error fetching from Firestore: {str(e)}")
-            return None
+            self.logger.error(f"Firestore fetch failed: {str(e)}. Triggering Resilience Layer.")
+            
+        return self._get_local(collection, document_id)
 
     def query(self, collection: str, filters: list = None, order_by: str = None, limit: int = None):
         """Advanced query implementation."""

@@ -23,6 +23,7 @@ from src.utils.logger import setup_logger
 from src.facades.forecasting import ForecastingFacade
 from src.facades.simulation_facade import SimulationFacade
 from src.facades.lifecycle_facade import LifecycleFacade
+from src.utils.style_utils import inject_industrial_theme
 
 logger = setup_logger("ui.dashboard")
 forecaster = ForecastingFacade()
@@ -83,9 +84,12 @@ def load_market_data(force=False):
 full_df = load_market_data(force=force_refresh)
 clean_df = full_df # In this architecture, orchestrator handles cleaning
 
+# Inject High-Performance CSS
+inject_industrial_theme()
+
 # UI Layout
-st.title("BTC Profit and Sentiment Predictor")
-st.markdown("### Powered by LSTM and Market Psychology")
+st.markdown("<h1 style='color: #00ffff; font-family: monospace;'>BTC PULSE PREDICTOR</h1>", unsafe_allow_html=True)
+st.caption("Powered by LSTM and Market Psychology · Phase 4 HUD Active")
 
 if model and scaler and not full_df.empty:
     # 3. Sync Actuals (Non-blocking spinner)
@@ -233,8 +237,11 @@ if model and scaler and not full_df.empty:
             interest_pulse=interest_pulse
         )
         
-        if st.session_state.get('plan_triggered') and st.session_state['results'].get('withdrawal_date'):
-            st.success(f"Predicted Profit Target Hit Date: {st.session_state['results']['withdrawal_date'].strftime('%Y-%m-%d')}")
+        if st.session_state.get('plan_triggered'):
+            res_obj = st.session_state['results']
+            ui.render_confidence_indicator(res_obj.confidence_score, res_obj.simulation_status)
+            if res_obj.projected_withdrawal_date:
+                st.success(f"Predicted Profit Target Hit Date: {res_obj.projected_withdrawal_date}")
 
         fig = go.Figure()
         hv = full_df.tail(90)
@@ -248,21 +255,23 @@ if model and scaler and not full_df.empty:
         
         if 'results' in st.session_state:
             st.divider()
-            ui.render_performance_summaries(forecaster.get_performance_history(), clean_df, latest_price_val)
             r = st.session_state['results']
-            fig.add_trace(go.Scatter(x=r['backtest'].index, y=r['backtest'].values, name='Model (Backtest)', line=dict(color='cyan', dash='dot', width=1)))
-            fig.add_trace(go.Scatter(x=r['dates'], y=r['prices']+r['std'], mode='lines', line=dict(width=0), showlegend=False))
-            fig.add_trace(go.Scatter(x=r['dates'], y=r['prices']-r['std'], mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(0, 255, 0, 0.1)', name='68% CI'))
+            
+            # Note: Backtest is in 'res' (base_forecast), not in 'r' (simulation)
+            fig.add_trace(go.Scatter(x=res['backtest'].index, y=res['backtest'].values, name='Model (Backtest)', line=dict(color='cyan', dash='dot', width=1)))
+            
+            fig.add_trace(go.Scatter(x=r.forecast_dates, y=np.array(r.forecast_prices)+np.array(r.std), mode='lines', line=dict(width=0), showlegend=False))
+            fig.add_trace(go.Scatter(x=r.forecast_dates, y=np.array(r.forecast_prices)-np.array(r.std), mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(0, 255, 0, 0.1)', name='68% CI'))
             fig.add_trace(go.Scatter(
-                x=r['dates'], y=r['prices'], 
+                x=r.forecast_dates, y=r.forecast_prices, 
                 name='Forecast Mean', 
                 mode='lines+markers',
                 line=dict(color='#00ff00', width=3),
                 marker=dict(size=8, symbol='circle')
             ))
             if st.session_state.get('plan_triggered'):
-                target_val = r.get('target_price', 0.0)
-                fig.add_trace(go.Scatter(x=r['dates'], y=[target_val]*len(r['dates']), name='Target', line=dict(color='red', dash='dash')))
+                target_val = r.target_price
+                fig.add_trace(go.Scatter(x=r.forecast_dates, y=[target_val]*len(r.forecast_dates), name='Target', line=dict(color='red', dash='dash')))
 
             # --- ENTRY SNAPSHOT OVERLAY ---
             investments = simulator.get_journal_entries()
@@ -331,8 +340,9 @@ if model and scaler and not full_df.empty:
                 current_exit = calculate_withdrawal_date(current_f_dates, current_f_prices, target_price)
                 original_exit = pd.to_datetime(inv.get('original_withdrawal_date')) if inv.get('original_withdrawal_date') else None
                 
-                title = f"{inv['date']} | ROI: {roi:.1f}% | Entry: ${inv['price']:,.0f}"
+                title = f"INVESTMENT: {inv['date']} (ROI: {roi:.1f}%)"
                 with st.expander(title):
+                    st.markdown("<div class='hud-card'>", unsafe_allow_html=True)
                     # --- PREMIUM METADATA GRID ---
                     m1, m2, m3, m4 = st.columns(4)
                     with m1: 
@@ -509,14 +519,14 @@ if model and scaler and not full_df.empty:
                                         st.session_state[confirm_key] = False
                                         st.rerun()
                                 with sub_col2:
-                                    if st.button("Yes, Delete", key=f"yes_{inv['id']}", type="primary"):
+                                    if st.button("Purge Entry", key=f"del_{inv['id']}", use_container_width=True):
                                         simulator.delete_entry(inv['id'])
-                                        st.session_state[confirm_key] = False
                                         st.rerun()
                             else:
                                 if st.button("Delete Record", key=f"del_{inv['id']}", type="secondary"):
                                     st.session_state[confirm_key] = True
                                     st.rerun()
+                    st.markdown("</div>", unsafe_allow_html=True)
     
     # Infrastructure Audit
     st.divider()

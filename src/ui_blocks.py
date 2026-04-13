@@ -4,23 +4,23 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
+from src.utils.style_utils import render_glass_card
 
 def render_market_summary_metrics(latest_price_val, latest_date_val, forecast_today_val, forecast_today_date, interest_pulse=0.0):
-    """Render the Live Price vs Forecast metrics in a wide grid."""
-    st.subheader("Market Summary")
-    mcols = st.columns(4)
-    mcols[0].metric(f"Live BTC ({latest_date_val.strftime('%H:%M')})", f"${latest_price_val:,.2f}")
+    """Render the Live Price vs Forecast metrics in a high-density tactical grid."""
     
-    # Curiosity Pulse Integration (Wikimedia Hourly)
     pulse_indicator = f"{interest_pulse:,.0f} v/hr" if interest_pulse > 0 else "Stable"
-    mcols[1].metric("Curiosity Interest", pulse_indicator)
-
-    if forecast_today_val:
-        diff = latest_price_val - forecast_today_val
-        mcols[2].metric(f"Forecast ({forecast_today_date})", f"${forecast_today_val:,.2f}")
-        mcols[3].metric("USD Deviation", f"${diff:,.2f}", delta_color="off")
-    else:
-        mcols[2].write("**Forecast:** Pending Refresh")
+    diff = latest_price_val - (forecast_today_val or latest_price_val)
+    
+    mcols = st.columns(4)
+    with mcols[0]:
+        render_glass_card(f"### ${latest_price_val:,.2f}", f"Live BTC ({latest_date_val.strftime('%H:%M')})")
+    with mcols[1]:
+        render_glass_card(f"### {pulse_indicator}", "Curiosity Pulse")
+    with mcols[2]:
+        render_glass_card(f"### ${forecast_today_val:,.2f}" if forecast_today_val else "PENDING", f"Forecast ({forecast_today_date})")
+    with mcols[3]:
+        render_glass_card(f"### ${diff:,.2f}", "Tactical Deviation")
 
 def render_signal_attribution_analysis(impact_df):
     """Render the Signal Attribution charting and evaluation."""
@@ -379,3 +379,30 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
             )
             st.plotly_chart(fig_dist, width='stretch')
             st.caption(f"Based on {len(dist_df)} distinct simulation points.")
+
+def render_confidence_indicator(score, status):
+    """Lightweight CSS-based confidence and risk status indicator."""
+    status_class = "status-success" if status == "SUCCESS" else "status-warning"
+    
+    st.markdown(
+        f"""
+        <div class='hud-card'>
+            <div style='color: grey; font-size: 0.7rem; margin-bottom: 0.8rem;'>SIMULATION RELIABILITY AUDIT</div>
+            <div style='display: flex; justify-content: space-between; align-items: center;'>
+                <div>
+                    <span style='color: #00ffff; font-size: 1.8rem; font-weight: bold; font-family: monospace;'>
+                        {score:.2%}
+                    </span>
+                    <div style='color: grey; font-size: 0.6rem;'>MODEL CONFIDENCE SCORE</div>
+                </div>
+                <div class='status-badge {status_class}'>
+                    {status}
+                </div>
+            </div>
+            <div style='margin-top: 1rem; background: rgba(255,255,255,0.05); height: 4px; border-radius: 2px;'>
+                <div style='background: #00ffff; width: {score*100}%; height: 100%; border-radius: 2px; box-shadow: 0 0 8px #00ffff;'></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
