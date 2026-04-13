@@ -9,7 +9,7 @@ class FirestoreRepository(BaseRepository):
     """
     def __init__(self):
         super().__init__("repositories.firestore")
-        db_id = os.getenv("FIRESTORE_DATABASE", "(default)")
+        db_id = os.getenv("FIRESTORE_DATABASE", cloud_config.FIRESTORE_DATABASE)
         self.db = firestore.Client(project=cloud_config.PROJECT_ID, database=db_id)
         self.logger.info(f"Firestore Client connected to project: {cloud_config.PROJECT_ID}, db: {db_id}")
 

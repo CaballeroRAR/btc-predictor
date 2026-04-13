@@ -45,7 +45,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Dashboard."; exit $LAST
 Write-Host "`n[4/4] Deploying Dashboards and Workers to Cloud Run..." -ForegroundColor Yellow
 
 $SA_EMAIL = "btc-forecaster-sa@$PROJECT_ID.iam.gserviceaccount.com"
-$ENV_VARS = "PROJECT_ID=$PROJECT_ID,SERVICE_ACCOUNT=$SA_EMAIL,BUCKET_NAME=$BUCKET"
+$ENV_VARS = "PROJECT_ID=$PROJECT_ID,SERVICE_ACCOUNT=$SA_EMAIL,BUCKET_NAME=$BUCKET,FIRESTORE_DATABASE=btc-pred-db"
 
 # 4a. Dashboard Deploy
 gcloud run deploy btc-dashboard `

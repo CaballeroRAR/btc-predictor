@@ -40,12 +40,23 @@ def trigger_training_job(service_account=None):
     print(f"   - Service Account: {sa_email or 'Default ADC Asset'}")
 
     # Define the Custom Job
+    machine_type = cloud_config.MACHINE_TYPE or "n1-standard-4"
     machine_spec = {
-        "machine_type": cloud_config.MACHINE_TYPE,
+        "machine_type": machine_type,
     }
-    if cloud_config.ACCELERATOR_TYPE:
-        machine_spec["accelerator_type"] = cloud_config.ACCELERATOR_TYPE
-        machine_spec["accelerator_count"] = cloud_config.ACCELERATOR_COUNT
+    
+    # Explicitly check for ACCELERATOR_TYPE and ensure it is truthy
+    acc_type = getattr(cloud_config, 'ACCELERATOR_TYPE', None)
+    acc_count = getattr(cloud_config, 'ACCELERATOR_COUNT', 0)
+    
+    if acc_type and acc_type != "None" and acc_count > 0:
+        machine_spec["accelerator_type"] = acc_type
+        machine_spec["accelerator_count"] = acc_count
+        print(f"[{datetime.now()}] [GCP] Acceleration enabled: {acc_type} (x{acc_count})")
+    else:
+        print(f"[{datetime.now()}] [GCP] Acceleration disabled: Submitting in High-Availability CPU mode.")
+
+    print(f"[{datetime.now()}] [GCP] Final Machine Spec: {machine_spec}")
 
     job = aiplatform.CustomJob(
         display_name=display_name,

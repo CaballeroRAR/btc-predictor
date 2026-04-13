@@ -30,6 +30,7 @@ gcloud scheduler jobs create http btc-hourly-recalibrate `
     --location=$REGION `
     --oidc-service-account-email=$SA_EMAIL `
     --oidc-token-audience=$WorkerUrl `
+        --attempt-deadline=600s `
     --quiet 2>$null
 
 if ($LASTEXITCODE -ne 0) {
@@ -40,6 +41,7 @@ if ($LASTEXITCODE -ne 0) {
         --location=$REGION `
         --oidc-service-account-email=$SA_EMAIL `
         --oidc-token-audience=$WorkerUrl `
+        --attempt-deadline=600s `
         --quiet
 }
 
@@ -52,6 +54,7 @@ gcloud scheduler jobs create http btc-daily-retrain `
     --location=$REGION `
     --oidc-service-account-email=$SA_EMAIL `
     --oidc-token-audience=$WorkerUrl `
+        --attempt-deadline=600s `
     --quiet 2>$null
 
 if ($LASTEXITCODE -ne 0) {
@@ -62,6 +65,7 @@ if ($LASTEXITCODE -ne 0) {
         --location=$REGION `
         --oidc-service-account-email=$SA_EMAIL `
         --oidc-token-audience=$WorkerUrl `
+        --attempt-deadline=600s `
         --quiet
 }
 

@@ -4,6 +4,7 @@ import os
 PROJECT_ID = "btc-predictor-492515"
 REGION = "us-central1"
 BUCKET_NAME = "btc_predictor_models"
+FIRESTORE_DATABASE = "btc-pred-db"
 
 # Image URIs
 TRAINING_IMAGE_URI = f"gcr.io/{PROJECT_ID}/btc-trainer"
@@ -22,8 +23,8 @@ YEARS_HISTORY = 6
 
 # Vertex AI Training Config
 MACHINE_TYPE = "n1-standard-4"
-ACCELERATOR_TYPE = "NVIDIA_TESLA_T4"
-ACCELERATOR_COUNT = 1
+ACCELERATOR_TYPE = None
+ACCELERATOR_COUNT = 0
 
 def get_storage_path(filename, folder=DATA_DIR):
     """Utility to format GCS paths."""
