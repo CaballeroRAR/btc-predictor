@@ -1,73 +1,48 @@
-# BTC Predictor Project: v2.1 Industrial Infrastructure
+# BTC Predictor: Production MLOps Infrastructure
 
-The BTC Predictor is a professional-grade forecasting system that utilizes a stacked Long Short-Term Memory (LSTM) architecture to project Bitcoin price trajectories. The system is built on a serverless Google Cloud Platform (GCP) backbone, integrating high-frequency market data with institutional macro-economic indicators.
+## Technical Overview
+The BTC Predictor is a serverless MLOps system deployed on Google Cloud Platform (GCP). It utilizes a stacked Long Short-Term Memory (LSTM) architecture with Monte Carlo Dropout for uncertainty estimation. The project is designed for autonomous price trajectory projection using 14 distinct feature channels across market, network, and macro-economic metrics.
 
----
+## Architecture
+The system utilizes a decoupled three-tier architecture in the `us-central1` region:
 
-## Technical Architecture
+1.  **Orchestration Layer (Cloud Run)**: Streamlit-based UI for data visualization and coordination tracking.
+2.  **Autonomous Worker (Cloud Run)**: FastAPI-based execution environment for hourly drift recalibration and retraining triggers.
+3.  **Neural Compute (Vertex AI)**: Custom training jobs triggered via the Vertex SDK on high-availability CPU instances.
+4.  **Persistence Layer**: Synchronized storage using GCS for model artifacts and a dedicated Firestore instance (`btc-pred-db`) for state management.
 
-The project implements a Decoupled Three-Tier Architecture to ensure institutional stability:
+## MLOps Pipeline Stabilization (Technical Resolutions)
 
-1.  **Orchestration Layer**: Streamlit-based interface deployed on Cloud Run, providing Monte Carlo uncertainty estimation and precision coordinate tracking.
-2.  **Autonomous Worker Layer**: FastAPI service on Cloud Run managing hourly drift recalibration and automated pipeline triggers via Cloud Scheduler.
-3.  **Neural Compute Layer**: Custom training environment on Vertex AI using Spot Provisioning Models for cost-efficient model lifecycle management.
+### Distributed Identity and Authentication
+- **Problem**: 403 Forbidden/Unauthorized errors during Cloud Scheduler-to-Worker invocation.
+- **Solution**: Implemented OIDC-authenticated handshakes by granting the `roles/iam.serviceAccountTokenCreator` role to the Cloud Scheduler Service Agent.
+- **Outcome**: Established a secure, automated handshake for all scheduled jobs.
 
----
+### Resource and Persistence Realignment
+- **Compute Scaling**: Increased Cloud Run memory allocation to **2Gi** and extended the `attempt-deadline` to **600s (10 minutes)** to accommodate compute-intensive Monte Carlo Dropout calculations.
+- **Database Topology**: Redirected the `FirestoreRepository` from the generic `(default)` database to the project-specific **`btc-pred-db`** instance.
+- **Storage Strategy**: Implemented `roles/storage.admin` project-level permissions for the `btc-forecaster-sa` to resolve bucket metadata (storage.buckets.get) denial errors during training job submission.
 
-## Granular Neural Schema: The 14-Feature Input Tensor
+### Quota-Aware Neural Scheduling
+- **Constraint**: Vertex AI GPU (NVIDIA Tesla T4) quota limitations causing 429 Submission Rejected errors.
+- **Optimization**: Reconfigured the logic in `vertex_trigger.py` and `cloud_config.py` to target **`n1-standard-4` (CPU)** instances. 
+- **Efficiency**: LSTM training for the 14-feature input tensor is completed within the standard Project Quota window, ensuring 100% nightly retraining availability.
 
-The forecasting engine processes a 60-day historical window across 14 distinct feature channels. Each feature is normalized via a MinMaxScaler to maintain gradient stability during backpropagation.
+## Neural Schema: 14-Feature Input Tensor
+The engine processes a 60-day lookback window. Features are normalized via a `MinMaxScaler`.
 
-### Group 1: Market Core (Indices 0-4)
-- **0. Open**: Daily opening price in USD.
-- **1. High**: Daily relative peak. Used by the model to quantify intraday volatility.
-- **2. Low**: Daily support floor.
-- **3. Close**: The primary regression target.
-- **4. Volume**: Market liquidity signal. Used to confirm the strength of price movements.
+| Index | Feature | Metric Category | Technical Role |
+| :--- | :--- | :--- | :--- |
+| 0-4 | O/H/L/C/V | Market Core | Primary price action and liquidity confirmation. |
+| 5 | BTC/ETH | Network Alpha | Internal asset-class risk sentiment proxy. |
+| 6-8 | Gold/DXY/US10Y | Macro Gravity | Global dollar-strength and risk-free opportunity cost. |
+| 9-11 | RSI/Fear&Greed/NLP | Sentiment/Technical | VADER Sentiment Reasoning and crowd psychology. |
+| 12-13 | Drift Alignment/Vol | Feedback Loop | Model self-correction based on mean percentage error. |
 
-### Group 2: Network Alpha (Index 5)
-- **5. BTC/ETH Ratio**: Proxy for blockchain-native risk sentiment. A rising ratio indicates a "Flight to Quality" or risk-off sentiment within the cryptocurrency asset class.
-
-### Group 3: Macro Gravity Engine (Indices 6-8)
-- **6. BTC/Gold Ratio**: Measures the valuation of "Digital Gold" against physical sound money. Captures shifts in the global store-of-value narrative.
-- **7. USD Index (DXY)**: The primary currency headwind. Quantifies dollar-strength pressure on Bitcoin's USD valuation.
-- **8. US 10-Year Treasury Yield (US10Y)**: Represents the opportunity cost of risk-off yielding assets. Higher risk-free rates historically exert downward pressure on speculative assets.
-
-### Group 4: Psychological Velocity (Indices 9-11)
-- **9. RSI (14-Day)**: Relative Strength Index. Identifies overbought or oversold technical conditions.
-- **10. Fear & Greed Index**: Aggregated market sentiment (Alternative.me API). Quantifies crowd psychology extremes.
-- **11. News Sentiment (VADER NLP)**: Compound sentiment scores derived from CoinDesk and CoinTelegraph RSS feeds. Uses Valency Aware Dictionary for Sentiment Reasoning to map tone to a 0-100 scale.
-
-### Group 5: Closed-Loop System Feedback (Indices 12-13)
-- **12. Drift Alignment**: The mean percentage error between the previous forecast and actual market close. This feature allows the model to "self-correct" based on its own recent performance.
-- **13. Drift Volatility**: The standard deviation of recent prediction errors. Provides the model with a "Confidence Context" based on historical performance variance.
-
----
-
-## Data Integrity and Resilience
-
-The pipeline implements Selective Imputation to ensure high availability:
-
-1.  **Imputation Logic**: In the event of an API failure (e.g., DXY or News Feed lockout), the system performs forward and backward filling (`ffill` and `bfill`) followed by zero-filling. This prevents empty datasets from crashing the training or inference cycles.
-2.  **Validation Gate**: A minimum sample check ensures that the dataset contains at least (Lookback + Forecast + 10) rows before proceeding to the Neural Layer.
-
----
-
-## Deployment and MLOps
-
-### Automated Validation (Command Shadowing)
-To ensure deployment safety without live cloud interaction, the system uses a Command Shadowing test suite. This suite intercepts `gcloud` and `gsutil` calls to verify logic and configurations against a predefined "Operation Log."
-
-### Specialized Agent Workflows
-The project is maintained using agentic workflows located in `.agent/workflows/`. These include:
-- `analyze-project`: Structural audit and architectural mapping.
-- `fix-pipelines`: Diagnostic and healing logic for inference failures.
-- `mlops-expert`: Scalability and security audit for GCP infrastructure.
-
----
-
-## Environment Configuration
-- **Project ID**: `btc-predictor-492515`
+## Production Specifications
+- **Project Context**: `btc-predictor-492515`
 - **Region**: `us-central1`
-- **Runtime**: `python-3.11-slim`
-- **Neural Stack**: `keras==3.12.1` / `tensorflow==2.16.1`
+- **Firestore Instance**: `btc-pred-db`
+- **Runtime Environment**: `python-3.11-slim`
+- **Core Stacks**: `TensorFlow 2.16.1` / `Keras 3.12.1` / `FastAPI` / `Streamlit`
+- **Service Account**: `btc-forecaster-sa` (PoLP Configured)
