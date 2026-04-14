@@ -7,7 +7,7 @@ import numpy as np
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import feedparser
 from src.utils.logger import setup_logger
-import cloud_config as cloud_config
+from src import cloud_config
 
 class IndustrialMarketAdapter:
     """

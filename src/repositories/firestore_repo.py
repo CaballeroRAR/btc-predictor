@@ -1,7 +1,7 @@
 from google.cloud import firestore
 import os
 from src.repositories.base import BaseRepository
-import cloud_config as cloud_config
+from src import cloud_config
 
 class FirestoreRepository(BaseRepository):
     """

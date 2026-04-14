@@ -8,7 +8,7 @@ from src.repositories.prediction_repo import PredictionRepository
 from src.repositories.calibration_repo import CalibrationRepository
 from src.repositories.asset_repo import AssetRepository
 from src.utils.logger import setup_logger
-import cloud_config as cloud_config
+from src import cloud_config
 from src.core.analysis import calculate_signal_impact
 from src.core.data_orchestrator import data_orchestrator
 
@@ -97,7 +97,15 @@ class ForecastingFacade:
         logger.info(f"Shape Freedom:  7-Day Momentum = {growth_7d:+.2f}%")
         logger.info("="*40 + "\n")
         
-        mean = mean + shift
+        # Apply Soft Momentum Grounding (80% Alignment)
+        # This prevents the 'Mirror' effect while keeping the trajectory grounded.
+        # We align the inception point to 80% of reality and 20% of neural opinion.
+        initial_alignment = (reference_price * 0.8) + (mean[0] * 0.2)
+        shift = initial_alignment - mean[0]
+        
+        # Apply decaying shift (Convergence to Raw Neural Opinion by Day 30)
+        decay = np.linspace(1.0, 0.0, len(mean))
+        mean = mean + (shift * decay)
 
         # Every point in 'mean' is now a grounded neural prediction for [Today, Tomorrow, ...]
         all_dates = [datetime.combine(today_dt, datetime.min.time()) + timedelta(days=i) for i in range(len(mean))]

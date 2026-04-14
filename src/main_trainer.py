@@ -8,9 +8,9 @@ import numpy as np
 import joblib
 from sklearn.preprocessing import MinMaxScaler
 from keras.callbacks import EarlyStopping, ModelCheckpoint
-import cloud_config as cloud_config
-from data_loader import prepare_merged_dataset, create_sequences
-from model import build_lstm_model
+from src import cloud_config
+from src.data_loader import prepare_merged_dataset, create_sequences
+from src.model import build_lstm_model
 from src.utils.logger import setup_logger
 from src.repositories.asset_repo import AssetRepository
 from src.facades.lifecycle_facade import LifecycleFacade

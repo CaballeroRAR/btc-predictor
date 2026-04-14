@@ -1,7 +1,7 @@
 import keras
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout, Input
-import cloud_config as cloud_config
+from src import cloud_config
 
 def build_lstm_model(input_shape):
     """

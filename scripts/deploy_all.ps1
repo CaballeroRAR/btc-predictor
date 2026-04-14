@@ -45,7 +45,8 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Dashboard."; exit $LAST
 Write-Host "`n[4/4] Deploying Dashboards and Workers to Cloud Run..." -ForegroundColor Yellow
 
 $SA_EMAIL = "btc-forecaster-sa@$PROJECT_ID.iam.gserviceaccount.com"
-$PASSWORDS = "DASHBOARD_PASSWORD=btc1984,DASHBOARD_PASS_1=E(nC>D8<<279oNV@,DASHBOARD_PASS_2=727C?O%yDb-G?4=N,DASHBOARD_PASS_3=1(OcJ=1j$uE`"p98I,DASHBOARD_PASS_4=%k):7J5j5MY<f/_O"
+# Using single-quoted literals to prevent PowerShell from eating $ and " symbols
+$PASSWORDS = 'DASHBOARD_PASSWORD=btc1984,DASHBOARD_PASS_1=E(nC>D8<<279oNV@,DASHBOARD_PASS_2=727C?O%yDb-G?4=N,DASHBOARD_PASS_3=1(OcJ=1j$uE"p98I,DASHBOARD_PASS_4=%k):7J5j5MY<f/_O'
 $ENV_VARS = "PROJECT_ID=$PROJECT_ID,SERVICE_ACCOUNT=$SA_EMAIL,BUCKET_NAME=$BUCKET,FIRESTORE_DATABASE=btc-pred-db,$PASSWORDS"
 
 # 4a. Dashboard Deploy

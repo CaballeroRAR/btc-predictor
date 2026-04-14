@@ -7,7 +7,7 @@ import numpy as np
 from google.cloud import storage
 import io
 import streamlit as st
-import cloud_config as cloud_config
+from src import cloud_config
 from src.utils.logger import setup_logger
 from src.adapters.market_adapter import IndustrialMarketAdapter
 from src.core.data_orchestrator import data_orchestrator

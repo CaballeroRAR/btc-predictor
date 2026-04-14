@@ -1,5 +1,5 @@
 from google.cloud import storage, aiplatform
-import cloud_config as cloud_config
+from src import cloud_config
 from datetime import datetime
 import os
 

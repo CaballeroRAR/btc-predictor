@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import pandas as pd
 from src.core.engine.base import PredictionStrategy
-import cloud_config as cloud_config
+from src import cloud_config
 
 class LSTMMonteCarloStrategy(PredictionStrategy):
     """

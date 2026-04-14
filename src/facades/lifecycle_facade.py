@@ -1,10 +1,10 @@
 import os
 from datetime import datetime
-import src.cloud_config as cloud_config
+from src import cloud_config
 from src.core.data_orchestrator import data_orchestrator
 from src.repositories.asset_repo import AssetRepository
 from src.utils.logger import setup_logger
-import vertex_trigger as vertex
+from src import vertex_trigger as vertex
 
 logger = setup_logger("facades.lifecycle")
 

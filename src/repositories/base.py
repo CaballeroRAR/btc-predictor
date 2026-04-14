@@ -3,7 +3,7 @@ import os
 import json
 from datetime import datetime
 from src.utils.logger import setup_logger
-import cloud_config as cloud_config
+from src import cloud_config
 
 class BaseRepository(ABC):
     """
