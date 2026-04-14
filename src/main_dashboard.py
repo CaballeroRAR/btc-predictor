@@ -119,8 +119,17 @@ if model and scaler and not full_df.empty:
     if 'base_forecast' not in st.session_state:
         # If market was just refreshed, we force a fresh neural inference
         force_infer = should_refresh_market
-        with st.spinner("Initializing Latest Market Forecast..."):
-            st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, clean_df, force=force_infer)
+        with st.spinner("Stationary Engine: Synchronizing Neural Trajectories..."):
+            try:
+                st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, clean_df, force=force_infer)
+            except Exception as e:
+                logger.error(f"FORECAST_CRASH: {str(e)}")
+                st.error("### ⚠️ Architectural Alignment Required")
+                st.info("The new Stationary Engine requires a 20-feature model. Please use the button below to force a full cloud synchronization.")
+                if st.button("🚀 Force Architectural Sync"):
+                    lifecycle_manager.sync_assets(force=True)
+                    st.rerun()
+                st.stop()
     
     base_res = st.session_state['base_forecast']
     if base_res.get('is_cached'):
@@ -606,10 +615,17 @@ if model and scaler and not full_df.empty:
     # Infrastructure Audit
     st.divider()
     with st.expander("Analytical Infrastructure Inventory"):
-        sys_col1, sys_col2, sys_col3 = st.columns(3)
+        sys_status = lifecycle_manager.get_system_status()
+        sys_col1, sys_col2, sys_col3, sys_col4 = st.columns(4)
         sys_col1.write(f"**GCP Project:** `{cloud_config.PROJECT_ID}`")
         sys_col2.write(f"**Computation Region:** `{cloud_config.REGION}`")
-        sys_col3.write(f"**Model Context:** `LOCAL_LSTM_V2`")
+        sys_col3.write(f"**Model Context:** `STATIONARY_LR_V2`")
+        
+        last_upd = sys_status.get('last_training_date', 'Unknown')
+        if hasattr(last_upd, 'strftime'):
+            last_upd = last_upd.strftime('%Y-%m-%d %H:%M')
+        sys_col4.write(f"**Model Updated:** `{last_upd}`")
+        
         st.caption("Verify environment alignment by cross-referencing this Project ID with your Google Cloud Console URL.")
 
     st.divider()

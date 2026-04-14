@@ -40,10 +40,22 @@ class LifecycleFacade:
     def load_model_assets(self):
         """
         Loads and returns the LSTM model and scaler.
-        Performs a dynamic GCS sync if artifacts are missing locally.
+        Performs a dynamic GCS sync if artifacts are missing or legacy (schema mismatch).
         """
-        if not os.path.exists(cloud_config.MODEL_PATH) or not os.path.exists(cloud_config.SCALER_PATH):
-            logger.info("Critical artifacts missing. Initiating automatic cloud synchronization...")
+        from src.core.standardizer import MarketStandardizer
+        EXPECTED_FEATURES = len(MarketStandardizer.REQUIRED_COLUMNS)
+        
+        should_sync = not os.path.exists(cloud_config.MODEL_PATH) or not os.path.exists(cloud_config.SCALER_PATH)
+        
+        if not should_sync:
+            # Check for architectural parity
+            temp_scaler = self.assets.load_scaler("scaler.pkl")
+            if temp_scaler.n_features_in_ != EXPECTED_FEATURES:
+                logger.warning(f"ARCHITECTURAL DESYNC: Scaler expects {temp_scaler.n_features_in_} but code requires {EXPECTED_FEATURES}. Forcing Cloud Alignment.")
+                should_sync = True
+
+        if should_sync:
+            logger.info("Initiating automatic cloud synchronization for Stationary Engine...")
             self.sync_assets(force=True)
             
         model = self.assets.load_model("btc_lstm_model.h5")

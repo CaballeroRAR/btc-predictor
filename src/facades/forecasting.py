@@ -146,25 +146,40 @@ class ForecastingFacade:
 
     def _generate_backtest(self, model, scaler, full_df, depth=30):
         """
-        Produce a serial backtest for the last N days to evaluate model fitness.
-        Migrated from forecasting_engine.get_backtest_predictions.
+        Produce a serial backtest for the last N days using Stationary Log-Returns.
+        Calculates the one-step-ahead prediction for historical validation.
         """
         import tensorflow as tf
         lookback = cloud_config.LOOKBACK_DAYS
+        
+        # Guard: Ensure we have enough history for the requested depth + lookback
+        if len(full_df) < (lookback + depth):
+            logger.warning(f"BACKTEST: Insufficient history ({len(full_df)} rows). Minimizing depth.")
+            depth = max(1, len(full_df) - lookback - 1)
+            if depth <= 0: return pd.Series()
+
         backtest_dates = full_df.index[-depth:]
         preds = []
         
         for i in range(len(full_df) - depth, len(full_df)):
             window = full_df.iloc[i - lookback : i]
+            if window.empty:
+                logger.error(f"BACKTEST: Critical window failure at index {i}")
+                preds.append(full_df['Close'].iloc[i-1]) # Fallback to persistence
+                continue
+
             scaled = scaler.transform(window.values)
             X = tf.convert_to_tensor(np.expand_dims(scaled, axis=0), dtype=tf.float32)
             
-            # Simple inference for backtest (no dropout needed)
-            p_scaled = model(X, training=False)[0, 0]
+            # 1. Predict Log-Return (Target index 12)
+            # Simple inference (no dropout needed for backtest)
+            lr_pred = model(X, training=False)[0, 0]
             
-            dummy = np.zeros((1, scaler.n_features_in_))
-            dummy[0, 3] = p_scaled
-            preds.append(scaler.inverse_transform(dummy)[0, 3])
+            # 2. Reconstitute Price from Return
+            # P_pred = P_actual_t-1 * exp(lr_pred)
+            prev_close = full_df['Close'].iloc[i-1]
+            price_pred = prev_close * np.exp(lr_pred)
+            preds.append(price_pred)
             
         return pd.Series(preds, index=backtest_dates)
 
@@ -278,17 +293,36 @@ class ForecastingFacade:
         pulse_row = last_row.copy()
         pulse_row.name = pd.Timestamp(today_dt)
         
-        # Inject Price Pulse
+        # 1. Inject Price Pulse 
         pulse_row['Open'] = last_row['Close']
         pulse_row['High'] = max(pulse_row['Open'], live_price)
         pulse_row['Low'] = min(pulse_row['Open'], live_price)
         pulse_row['Close'] = live_price
         
-        # Inject Psychology Pulse
+        # 2. Inject Stationary Target (Log_Return) for today
+        # Important: The model needs today's move to predict tomorrow's move
+        pulse_row['Log_Return'] = np.log(live_price / last_row['Close'])
+        
+        # 3. Inject Psychology Pulse (Drift Alignment)
         pulse_row['Sentiment'] = np.clip(last_row['Sentiment'] + drift, 0, 100)
         pulse_row['Google_Trends'] = np.clip(last_row['Google_Trends'] + drift/2, 0, 100)
+
+        # 4. Inject Temporal Embeddings (Fourier)
+        days_in_week = 7
+        months_in_year = 12
+        pulse_row['Day_Sin'] = np.sin(2 * np.pi * today_dt.weekday() / days_in_week)
+        pulse_row['Day_Cos'] = np.cos(2 * np.pi * today_dt.weekday() / days_in_week)
+        pulse_row['Month_Sin'] = np.sin(2 * np.pi * today_dt.month / months_in_year)
+        pulse_row['Month_Cos'] = np.cos(2 * np.pi * today_dt.month / months_in_year)
         
-        logger.info(f"INJECTION: Appending {today_dt} pulse (${live_price:,.2f}) to Neural Window")
+        # 5. Volatility Persistence (Simplified ATR update)
+        # TR = max(H-L, |H-Cp|, |L-Cp|)
+        tr = max(pulse_row['High'] - pulse_row['Low'], 
+                 abs(pulse_row['High'] - last_row['Close']),
+                 abs(pulse_row['Low'] - last_row['Close']))
+        pulse_row['ATR'] = (last_row['ATR'] * 13 + tr) / 14 
+        
+        logger.info(f"INJECTION: Appending {today_dt} pulse (${live_price:,.2f} | {pulse_row['Log_Return']:+.4f} LR) to Neural Window")
         return pd.concat([df, pd.DataFrame([pulse_row])])
 
     def _format_snapshot(self, snapshot):

@@ -149,8 +149,8 @@ class IndustrialMarketAdapter:
         dfs = []
         for name, slug in metrics.items():
             try:
-                # Fetch last 30 days to ensure overlap
-                url = f"{base_url}/{slug}?timespan=30days&format=json&cors=true"
+                # Fetch extensive history to match price data (approx 6 years)
+                url = f"{base_url}/{slug}?timespan=6years&format=json&cors=true"
                 resp = requests.get(url, timeout=10)
                 if resp.status_code == 200:
                     values = resp.json().get('values', [])

@@ -1,7 +1,11 @@
+import os
+import sys
+# Path resolution for industrial architecture
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from google.cloud import storage, aiplatform
 from src import cloud_config
 from datetime import datetime
-import os
 
 def init_aiplatform():
     """Initialize the AI Platform SDK with project and region."""
