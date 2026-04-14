@@ -97,10 +97,10 @@ class ForecastingFacade:
         logger.info(f"Shape Freedom:  7-Day Momentum = {growth_7d:+.2f}%")
         logger.info("="*40 + "\n")
         
-        # Apply Soft Momentum Grounding (80% Alignment)
-        # This prevents the 'Mirror' effect while keeping the trajectory grounded.
-        # We align the inception point to 80% of reality and 20% of neural opinion.
-        initial_alignment = (reference_price * 0.8) + (mean[0] * 0.2)
+        # Apply Soft Momentum Grounding (Default 50% Alignment)
+        # This prevents the 'Mirror' effect by allowing more neural divergence at the start.
+        GROUNDING_FACTOR = float(os.getenv("FORECAST_GROUNDING_FACTOR", 0.5))
+        initial_alignment = (reference_price * GROUNDING_FACTOR) + (mean[0] * (1 - GROUNDING_FACTOR))
         shift = initial_alignment - mean[0]
         
         # Apply decaying shift (Convergence to Raw Neural Opinion by Day 30)

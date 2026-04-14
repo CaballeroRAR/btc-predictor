@@ -12,6 +12,8 @@ class PredictionSchema(BaseModel):
 
 class CalibrationSchema(BaseModel):
     """Schema for sentiment/market drift calibration state."""
+    model_config = ConfigDict(protected_namespaces=())
+    
     last_calibration_date: str = Field(..., description="Timestamp of the last calibration")
     drift_value: float = Field(..., description="Calculated psychological drift offset")
     reference_price: float = Field(..., description="The BTC price at the moment of calibration")
