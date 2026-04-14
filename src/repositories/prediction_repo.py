@@ -52,3 +52,4 @@ class PredictionRepository(FirestoreRepository):
         """Fetch historical predictions for performance evaluation."""
         self.logger.info(f"Retrieving prediction history (limit: {limit})")
         return self.query(self.collection, order_by="forecast_date", limit=limit)
+

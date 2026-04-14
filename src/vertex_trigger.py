@@ -141,18 +141,32 @@ def get_status_summary(job):
     status_map = {
         "JOB_STATE_PENDING": "Initializing environment...",
         "JOB_STATE_QUEUED": "Waiting for compute resources...",
-        "JOB_STATE_RUNNING": "Training in progress (Typically takes 10-15m)...",
+        "JOB_STATE_RUNNING": "Training in progress...",
         "JOB_STATE_SUCCEEDED": "Training completed successfully!",
         "JOB_STATE_FAILED": "Training failed. Check Vertex AI logs.",
-        "JOB_STATE_CANCELLED": "Training was cancelled."
+        "JOB_STATE_CANCELLED": "Training was cancelled.",
+        "4": "Training completed successfully!",
+        "3": "Training in progress...",
+        "2": "Waiting for compute resources...",
+        "1": "Initializing environment..."
     }
     
     friendly_state = status_map.get(state, state)
     
-    # Calculate duration so far
+    # Dynamic Metadata for Finished vs. In-Progress Jobs
     create_time = job.create_time
+    end_time = getattr(job, "end_time", None)
+    
+    if state in ["JOB_STATE_SUCCEEDED", "4"] and create_time and end_time:
+        duration = end_time - create_time
+        mins = int(duration.total_seconds() / 60)
+        secs = int(duration.total_seconds() % 60)
+        finish_str = end_time.strftime("%H:%M")
+        return f"Finished at {finish_str} (Took {mins}m {secs}s)"
+    
     if create_time:
-        duration = datetime.now(create_time.tzinfo) - create_time
+        now_with_tz = datetime.now(create_time.tzinfo)
+        duration = now_with_tz - create_time
         mins = int(duration.total_seconds() / 60)
         return f"{friendly_state} (Started {mins}m ago)"
     

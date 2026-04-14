@@ -36,11 +36,19 @@ class InvestmentRepository(FirestoreRepository):
         
         patched_results = []
         for record in raw_results:
-            # Legacy Patching Logic (Schema Evolution)
-            if "simulation_status" not in record:
-                record["simulation_status"] = "SUCCESS" # Default for old records
-            if "confidence_score" not in record:
-                record["confidence_score"] = 1.0 # Default for old records
+            # Legacy field mapping
+            if "price" in record: record["entry_price"] = record["price"]
+            if "profit_target" in record: record["target_pct"] = record["profit_target"]
+            if "original_withdrawal_date" in record: record["projected_withdrawal_date"] = record["original_withdrawal_date"]
+            if "date" in record: record["created_at"] = record["date"]
+            
+            # Derived fields for legacy
+            if "entry_price" in record and "target_pct" in record and "target_price" not in record:
+                record["target_price"] = record["entry_price"] * (1 + record["target_pct"]/100)
+            
+            # Defaults for status/confidence
+            if "simulation_status" not in record: record["simulation_status"] = "SUCCESS"
+            if "confidence_score" not in record: record["confidence_score"] = 1.0
             
             try:
                 # Re-validate to ensure integrity

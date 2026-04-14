@@ -31,12 +31,18 @@ class ForecastingFacade:
         """
         Executes the full forecasting pipeline with caching.
         """
-        # 1. Cache Layer
+        # 1. Cache Layer with Temporal Integrity Guard
         if not force:
             snapshot = self.firestore_repo.get_latest_snapshot()
             if snapshot:
-                logger.info("Serving high-speed forecast from Firestore cache")
-                return self._format_snapshot(snapshot)
+                # Verify that the cached forecast is still chronologically relevant
+                first_date = pd.to_datetime(snapshot['dates'][0]).date()
+                today_dt = datetime.now().date()
+                if first_date >= today_dt:
+                    logger.info("Serving current high-speed forecast from Firestore")
+                    return self._format_snapshot(snapshot)
+                else:
+                    logger.warning(f"Cached forecast is chronologically stale (Started {first_date}). Triggering fresh alignment.")
 
         logger.info(f"Initiating Ground-Up Forecast (Source: {source})")
 
@@ -48,7 +54,8 @@ class ForecastingFacade:
         prev_drift = prev_state.get('drift_value', 0.0) if prev_state else 0.0
         
         # Cross-reference with last hourly price
-        hourly_price = get_last_hour_price_with_cache()
+        live_ctx = self.get_live_market_context()
+        hourly_price = live_ctx['live_price']
         reference_price = hourly_price if hourly_price else clean_df['Close'].iloc[-1]
 
         # Calculate new drift using native calibration logic
@@ -58,46 +65,33 @@ class ForecastingFacade:
         # Persist calibration state
         self.calibration_repo.save_state(avg_drift, reference_price, cloud_config.MODEL_PATH)
 
-        # 4. Strategy Execution (Inference)
-        recent_data = clean_df.tail(cloud_config.LOOKBACK_DAYS).copy()
-        
-        # Apply market-aligned psychology shifts
-        recent_data['Sentiment'] = np.clip(recent_data['Sentiment'] + avg_drift, 0, 100)
-        recent_data['Google_Trends'] = np.clip(recent_data['Google_Trends'] + avg_drift/2, 0, 100)
+        # 4. Strategy Execution with Pulse Injection
+        # We inject Today's live price into the lookback window
+        # to ensure the first prediction is a session-close estimate.
+        injected_df = self._inject_intraday_pulse(clean_df, live_ctx, avg_drift)
+        recent_data = injected_df.tail(cloud_config.LOOKBACK_DAYS).copy()
 
         # Execute Monte Carlo Inference
+        # The 1st prediction point now represents Today's Close Prediction
         mean, std = self.strategy.predict(model, scaler, recent_data)
         tight_std = std * 0.5  # Industrial confidence interval
 
-        # 5. Timeline & Backtest Execution
-        last_obs_date = clean_df.index[-1].date()
+        # 5. Timeline & Inception Grounding
         today_dt = datetime.now().date()
         
-        # Determine the start date for the forecast HUD
-        # We want to ensure 'Today' is always represented for live performance tracking
-        if last_obs_date >= today_dt:
-            # We have live data for today. To get today's prediction, 
-            # we must use data ending yesterday.
-            yesterday_window = clean_df.iloc[:-1].tail(cloud_config.LOOKBACK_DAYS).copy()
-            # Apply same psych shifts to the tail of yesterday for consistency
-            yesterday_window['Sentiment'] = np.clip(yesterday_window['Sentiment'] + avg_drift, 0, 100)
-            yesterday_window['Google_Trends'] = np.clip(yesterday_window['Google_Trends'] + avg_drift/2, 0, 100)
-            
-            t_mean, t_std = self.strategy.predict(model, scaler, yesterday_window)
-            
-            # Stitch: [Today's Pred] + [Tomorrow onwards]
-            full_mean = np.concatenate([t_mean, mean])
-            full_std = np.concatenate([t_std * 0.5, tight_std])
-            all_dates = [datetime.combine(today_dt, datetime.min.time())] + [today_dt + timedelta(days=i) for i in range(1, cloud_config.FORECAST_DAYS + 1)]
-        else:
-            # Standard path: Data ends yesterday or earlier
-            full_mean = mean
-            full_std = tight_std
-            all_dates = [clean_df.index[-1] + timedelta(days=i+1) for i in range(len(mean))]
+        # Calculate Level Shift for Inception Grounding
+        # Bias = Actual Price - Today's Expected Resolve
+        # This anchors the forecast to the live ticker without copying the model's logic.
+        shift = reference_price - mean[0]
+        logger.info(f"GROUNDING: Anchoring trajectory to ${reference_price:,.2f} (Shift: {shift:+.2f})")
+        mean = mean + shift
 
+        # Every point in 'mean' is now a grounded neural prediction for [Today, Tomorrow, ...]
+        all_dates = [datetime.combine(today_dt, datetime.min.time()) + timedelta(days=i) for i in range(len(mean))]
+        
         dates = all_dates
-        mean = full_mean
-        tight_std = full_std
+        mean = mean
+        tight_std = tight_std
 
         # 6. Persistence & Internal Logging
         backtest_series = self._generate_backtest(model, scaler, clean_df)
@@ -248,6 +242,35 @@ class ForecastingFacade:
             "timestamp": datetime.now(timezone.utc)
         }
 
+    def _inject_intraday_pulse(self, df, live_ctx, drift):
+        """
+        Synthesizes a 'Live' candle for Today and appends it to history.
+        Ensures the model captures the $6,000 breakout currently in flight.
+        """
+        today_dt = datetime.now().date()
+        if df.index[-1].date() == today_dt:
+            return df # Already has today's finalized data
+            
+        last_row = df.iloc[-1].copy()
+        live_price = live_ctx['live_price']
+        
+        # Build Pulse Row
+        pulse_row = last_row.copy()
+        pulse_row.name = pd.Timestamp(today_dt)
+        
+        # Inject Price Pulse
+        pulse_row['Open'] = last_row['Close']
+        pulse_row['High'] = max(pulse_row['Open'], live_price)
+        pulse_row['Low'] = min(pulse_row['Open'], live_price)
+        pulse_row['Close'] = live_price
+        
+        # Inject Psychology Pulse
+        pulse_row['Sentiment'] = np.clip(last_row['Sentiment'] + drift, 0, 100)
+        pulse_row['Google_Trends'] = np.clip(last_row['Google_Trends'] + drift/2, 0, 100)
+        
+        logger.info(f"INJECTION: Appending {today_dt} pulse (${live_price:,.2f}) to Neural Window")
+        return pd.concat([df, pd.DataFrame([pulse_row])])
+
     def _format_snapshot(self, snapshot):
         """Helper to convert Firestore snapshot into runtime-ready dict."""
         return {
@@ -259,3 +282,5 @@ class ForecastingFacade:
             'std': np.array(snapshot['std']),
             'backtest': pd.Series(snapshot['backtest_values'], index=pd.to_datetime(snapshot['backtest_dates'])),
         }
+
+

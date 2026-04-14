@@ -45,7 +45,7 @@ class FirestoreRepository(BaseRepository):
             
         return self._get_local(collection, document_id)
 
-    def query(self, collection: str, filters: list = None, order_by: str = None, limit: int = None):
+    def query(self, collection: str, filters: list = None, order_by: str = None, descending: bool = False, limit: int = None):
         """Advanced query implementation."""
         try:
             self.logger.info(f"Querying collection {collection} with {len(filters or [])} filters")
@@ -56,7 +56,8 @@ class FirestoreRepository(BaseRepository):
                     ref = ref.where(f[0], f[1], f[2])
             
             if order_by:
-                ref = ref.order_by(order_by)
+                direction = firestore.Query.DESCENDING if descending else firestore.Query.ASCENDING
+                ref = ref.order_by(order_by, direction=direction)
             
             if limit:
                 ref = ref.limit(limit)

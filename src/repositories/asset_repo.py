@@ -59,14 +59,38 @@ class AssetRepository(BaseRepository):
         self.logger.error(f"Scaler file not found: {path}")
         return None
 
+    def _find_latest_artifact(self, filename):
+        """
+        Recursively scans the staging bucket to find the latest blob matching filename.
+        Returns the blob or None.
+        """
+        self.logger.info(f"Discovery: Scanning gs://{cloud_config.BUCKET_NAME} for latest '{filename}'")
+        blobs = list(self.bucket.list_blobs())
+        
+        # Filter for filename and sort by updated timestamp
+        matching = [b for b in blobs if filename in b.name]
+        if not matching:
+            return None
+            
+        latest = sorted(matching, key=lambda x: x.updated, reverse=True)[0]
+        self.logger.info(f"Discovery: Found latest version at {latest.name} (Updated: {latest.updated})")
+        return latest
+
     def sync_from_cloud(self, filename):
-        """Pull an asset from GCS to the local environment."""
-        self.logger.info(f"Syncing {filename} from gs://{cloud_config.BUCKET_NAME}")
-        blob = self.bucket.blob(f"{cloud_config.MODEL_DIR}/{filename}")
+        """Pull the latest version of an asset from GCS to the local environment."""
+        self.logger.info(f"Initiating Discovery Sync for '{filename}'")
+        
+        blob = self._find_latest_artifact(filename)
+        if not blob:
+            self.logger.error(f"Sync failed: No artifact matching '{filename}' found in bucket.")
+            return False
+            
         local_path = os.path.join(cloud_config.MODEL_DIR, filename)
         os.makedirs(cloud_config.MODEL_DIR, exist_ok=True)
+        
         blob.download_to_filename(local_path)
-        self.logger.info(f"Successfully synced {filename}")
+        self.logger.info(f"Successfully synced latest {filename} from {blob.name}")
+        return True
 
     def sync_to_cloud(self, filename):
         """Push a local asset to GCS."""

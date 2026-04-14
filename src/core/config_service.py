@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 from threading import Lock
 
 class ConfigService:
@@ -18,8 +19,17 @@ class ConfigService:
             return cls._instance
 
     def _init_config(self):
-        # GCP Project Details
-        self.PROJECT_ID = os.getenv("PROJECT_ID", "btc-predictor-492515")
+        # 1. Load environment from .env file
+        load_dotenv()
+
+        # 2. GCP Project details (Mandatory)
+        self.PROJECT_ID = os.getenv("PROJECT_ID")
+        if not self.PROJECT_ID:
+            raise EnvironmentError(
+                "CRITICAL: PROJECT_ID environment variable is missing. "
+                "Please define it in your .env file or shell environment."
+            )
+
         self.REGION = os.getenv("REGION", "us-central1")
         self.BUCKET_NAME = os.getenv("BUCKET_NAME", "btc_predictor_models")
         self.FIRESTORE_DATABASE = os.getenv("FIRESTORE_DATABASE", "btc-pred-db")

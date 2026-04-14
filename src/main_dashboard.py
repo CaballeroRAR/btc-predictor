@@ -13,10 +13,8 @@ import numpy as np
 import os
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
-from dotenv import load_dotenv
 
 # 1. Configuration & Secrets
-load_dotenv()
 import src.cloud_config as cloud_config
 import src.ui_blocks as ui
 from src.utils.logger import setup_logger
@@ -98,10 +96,31 @@ if model and scaler and not full_df.empty:
             forecaster.sync_market_actuals(full_df=full_df)
             st.session_state['actuals_updated'] = True
 
-    # 4. Orchestrate Forecast
+    # 4. Throttled Market Metrics Initialization
+    SYNC_WINDOW_MINUTES = 5
+    now = datetime.now()
+    
+    # Check if market data needs refresh
+    time_since_market = (now - st.session_state.get('last_market_sync', now - timedelta(hours=1))).total_seconds()
+    should_refresh_market = force_refresh or (time_since_market > SYNC_WINDOW_MINUTES * 60)
+    
+    if should_refresh_market or 'live_ctx_cache' not in st.session_state:
+        with st.spinner("Refreshing Global Market Pulse..."):
+            st.session_state['live_ctx_cache'] = forecaster.get_live_market_context()
+            st.session_state['last_market_sync'] = now
+            # CRITICAL: Invalidate both simulation AND base forecast to prevent desync
+            st.session_state.pop('results', None) 
+            st.session_state.pop('base_forecast', None)
+            st.session_state.pop('plan_triggered', None)
+
+    live_ctx = st.session_state['live_ctx_cache']
+    
+    # 5. Orchestrate Forecast
     if 'base_forecast' not in st.session_state:
+        # If market was just refreshed, we force a fresh neural inference
+        force_infer = should_refresh_market
         with st.spinner("Initializing Latest Market Forecast..."):
-            st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, clean_df)
+            st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, clean_df, force=force_infer)
     
     base_res = st.session_state['base_forecast']
     if base_res.get('is_cached'):
@@ -109,12 +128,9 @@ if model and scaler and not full_df.empty:
         ts = base_res.get('calculation_time') or base_res.get('timestamp')
         if ts:
             st.caption(f"Loaded from cache (Generated {ts.strftime('%H:%M')} UTC)")
-
-    # 5. Market Metrics Initialization
-    live_ctx = forecaster.get_live_market_context()
     latest_price_val = live_ctx['live_price']
     interest_pulse = live_ctx['interest_pulse']
-    latest_date_val = datetime.now() 
+    latest_date_val = st.session_state['last_market_sync']
     
     logger.info(f"UI Overlay Updated: Price=${latest_price_val:,.2f} | Pulse={interest_pulse:,.0f}")
 
@@ -184,15 +200,31 @@ if model and scaler and not full_df.empty:
 
         st.divider()
         with st.expander("Model Management"):
-            # 1. Job Telemetry (Active Monitoring)
+            # 1. Job Telemetry (Throttled Monitoring)
             st.markdown("### Training Status")
-            active_job = lifecycle_manager.get_active_training_jobs(limit=1)
+            
+            # Sub-telemetry gate: Auto-refresh every 5 mins OR manual override
+            time_since_job = (now - st.session_state.get('last_job_sync_time', now - timedelta(hours=1))).total_seconds()
+            should_refresh_job = st.session_state.get('force_job_refresh') or (time_since_job > 300)
+            
+            if 'active_job_cache' not in st.session_state or should_refresh_job:
+                with st.spinner("Fetching Vertex AI Jobs..."):
+                    st.session_state['active_job_cache'] = lifecycle_manager.get_active_training_jobs(limit=1)
+                    st.session_state['force_job_refresh'] = False
+                    st.session_state['last_job_sync_time'] = now
+            
+            active_job = st.session_state['active_job_cache']
+            
             if active_job:
                 st.info(active_job["status"])
                 if st.button("Refresh Job Status", width='stretch'):
+                    st.session_state['force_job_refresh'] = True
                     st.rerun()
             else:
                 st.write("No active training jobs found in scanned regions.")
+                if st.button("Check for Jobs", width='stretch'):
+                    st.session_state['force_job_refresh'] = True
+                    st.rerun()
 
             st.markdown("### Asset Management")
             if st.button("Synchronize Model Assets", width='stretch'):
@@ -218,12 +250,18 @@ if model and scaler and not full_df.empty:
                     except Exception as e:
                         st.error(f"Failed to launch job: {str(e)}")
 
+    # Tab Navigation (Pinned to session state to prevent refresh reset)
     tabs = ["Market Analysis", "Investment Journal"]
-    if 'active_tab' not in st.session_state:
-        st.session_state['active_tab'] = tabs[0]
+    if 'nav_tab' not in st.session_state:
+        st.session_state['nav_tab'] = tabs[0]
     
-    active_tab = st.radio("Navigation", tabs, index=tabs.index(st.session_state['active_tab']), horizontal=True, label_visibility="collapsed")
-    st.session_state['active_tab'] = active_tab
+    active_tab = st.radio(
+        "Navigation", 
+        tabs, 
+        key='nav_tab',
+        horizontal=True, 
+        label_visibility="collapsed"
+    )
     
     if active_tab == "Market Analysis":
         res = st.session_state['base_forecast']
@@ -244,7 +282,13 @@ if model and scaler and not full_df.empty:
                 st.success(f"Predicted Profit Target Hit Date: {res_obj.projected_withdrawal_date}")
 
         fig = go.Figure()
-        hv = full_df.tail(90)
+        # Visual focus: last 90 days + live tick (Normalized to today for grid alignment)
+        hv = full_df.tail(90).copy()
+        # Ensure we anchor the live price to the midnight-normalized 'today' to sit on the gridline
+        live_t_normalized = pd.to_datetime(latest_date_val).normalize()
+        live_entry = pd.DataFrame({'Close': [latest_price_val]}, index=[live_t_normalized])
+        hv = pd.concat([hv, live_entry])
+        
         fig.add_trace(go.Scatter(
             x=hv.index, y=hv['Close'], 
             name='Actual Price', 
@@ -283,9 +327,8 @@ if model and scaler and not full_df.empty:
                     fig.add_trace(go.Scatter(
                         x=e_dates, y=e_prices, 
                         name='Last Entry State', 
-                        mode='lines+markers',
-                        line=dict(color='#4169E1', width=1, dash='dot'),
-                        marker=dict(size=6, symbol='diamond')
+                        mode='lines',
+                        line=dict(color='rgba(0, 150, 255, 0.4)', width=1, dash='dot')
                     ))
         
         fig.update_layout(
@@ -297,20 +340,36 @@ if model and scaler and not full_df.empty:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         
-        # Consistent Grid Hygiene & Viewport Control
-        today_dt = datetime.now()
+        # Consistent Grid Hygiene & Viewport Control (Midnight Normalized)
+        now = datetime.now()
+        today_dt = datetime(now.year, now.month, now.day)
         view_start = today_dt - timedelta(days=30)
-        view_end = r['dates'][-1] if 'results' in st.session_state else today_dt + timedelta(days=30)
         
-        grid_style = dict(showgrid=True, gridcolor='rgba(255, 255, 255, 0.15)')
+        # Determine view_end and ensure normalization
+        raw_end = r.forecast_dates[-1] if 'results' in st.session_state else today_dt + timedelta(days=30)
+        view_end = pd.to_datetime(raw_end).normalize()
+        
+        # Incremental Day View (Daily - Snap to Midnight)
+        all_dates = pd.date_range(start=view_start, end=view_end, freq='D')
+        tick_text = [f"{d.day}{d.strftime('%a')[0].upper()}" for d in all_dates]
+        
+        grid_style = dict(showgrid=True, gridcolor='rgba(255, 255, 255, 0.1)')
         fig.update_xaxes(
             range=[view_start, view_end],
+            tickmode='array',
+            tickvals=all_dates,
+            ticktext=tick_text,
             **grid_style
         )
+        # Highlight Sundays for weekly grouping
+        for d in all_dates:
+            if d.weekday() == 6: # Sunday
+                fig.add_vline(x=d, line_width=1, line_dash="dot", line_color="rgba(255, 255, 255, 0.35)")
+                
         fig.update_yaxes(title_text="Price (USD)", **grid_style)
         
         st.plotly_chart(fig, width='stretch')
-        ui.render_prediction_evaluation_chart(forecaster.get_performance_history(), full_df, res)
+        ui.render_prediction_evaluation_chart(forecaster.get_performance_history(), full_df, latest_price_val, res)
         
         # Signal Impact UI
         if res.get('impact_df') is not None:
@@ -321,7 +380,18 @@ if model and scaler and not full_df.empty:
 
     else: # Investment Journal
         st.subheader("Investment Journal")
-        invests = simulator.get_journal_entries()
+        
+        # Throttled Journal Retrieval
+        time_since_journal = (now - st.session_state.get('last_journal_sync', now - timedelta(hours=1))).total_seconds()
+        should_refresh_journal = force_refresh or (time_since_journal > SYNC_WINDOW_MINUTES * 60)
+        
+        if should_refresh_journal or 'investments_cache' not in st.session_state:
+            with st.spinner("Syncing Investment Journal..."):
+                st.session_state['investments_cache'] = simulator.get_journal_entries()
+                st.session_state['last_journal_sync'] = now
+
+        invests = st.session_state['investments_cache']
+        
         if not invests:
             st.info("No active investments tracked in Firestore.")
         else:
@@ -333,14 +403,19 @@ if model and scaler and not full_df.empty:
 
             # latest_price_val is already defined at the start of the UI loop from full_df
             for inv in reversed(invests):
-                roi = ((latest_price_val / inv['price']) - 1) * 100
-                target_price = inv['price'] * (1 + inv.get('profit_target', 2.0)/100)
+                # Format date for display
+                display_date = inv.get('created_at')
+                if isinstance(display_date, datetime):
+                    display_date = display_date.strftime('%Y-%m-%d')
+                
+                roi = ((latest_price_val / inv['entry_price']) - 1) * 100
+                target_price = inv['target_price']
                 
                 # Calculate Current Projected Exit based on today's forecast
                 current_exit = calculate_withdrawal_date(current_f_dates, current_f_prices, target_price)
-                original_exit = pd.to_datetime(inv.get('original_withdrawal_date')) if inv.get('original_withdrawal_date') else None
+                original_exit = pd.to_datetime(inv.get('projected_withdrawal_date')) if inv.get('projected_withdrawal_date') else None
                 
-                title = f"INVESTMENT: {inv['date']} (ROI: {roi:.1f}%)"
+                title = f"INVESTMENT: {display_date} (ROI: {roi:.1f}%)"
                 with st.expander(title):
                     st.markdown("<div class='hud-card'>", unsafe_allow_html=True)
                     # --- PREMIUM METADATA GRID ---
@@ -350,13 +425,13 @@ if model and scaler and not full_df.empty:
                         st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${inv['amount']}</h3>", unsafe_allow_html=True)
                     with m2: 
                         st.caption("Target ROI (%)")
-                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>{inv.get('profit_target', 2.0)}%</h3>", unsafe_allow_html=True)
+                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>{inv.get('target_pct', 2.0)}%</h3>", unsafe_allow_html=True)
                     with m3: 
                         st.caption("Entry Price")
-                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${inv['price']:,.0f}</h3>", unsafe_allow_html=True)
+                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${inv['entry_price']:,.0f}</h3>", unsafe_allow_html=True)
                     with m4: 
                         st.caption("Target Exit Price")
-                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${target_price:,.0f}</h3>", unsafe_allow_html=True)
+                        st.markdown(f"<h3 style='color: #00ffff; margin-top: -20px;'>${inv['target_price']:,.0f}</h3>", unsafe_allow_html=True)
                     
                     st.divider()
                     
@@ -381,7 +456,7 @@ if model and scaler and not full_df.empty:
                         m_fig = go.Figure()
                         
                         # Actual History since investment (Trimmed to last 15 days)
-                        asince = full_df[full_df.index >= pd.to_datetime(inv['date'])].tail(15)
+                        asince = full_df[full_df.index >= pd.to_datetime(display_date)].tail(15)
                         if not asince.empty:
                             m_fig.add_trace(go.Scatter(
                                 x=asince.index, y=asince['Close'], 

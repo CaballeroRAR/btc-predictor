@@ -14,13 +14,14 @@ def render_market_summary_metrics(latest_price_val, latest_date_val, forecast_to
     
     mcols = st.columns(4)
     with mcols[0]:
-        render_glass_card(f"### ${latest_price_val:,.2f}", f"Live BTC ({latest_date_val.strftime('%H:%M')})")
+        render_glass_card(f"<h3 style='margin:0; color:#00FF88;'>${latest_price_val:,.2f}</h3>", f"Live BTC ({latest_date_val.strftime('%H:%M')})")
     with mcols[1]:
-        render_glass_card(f"### {pulse_indicator}", "Curiosity Pulse")
+        render_glass_card(f"<h3 style='margin:0; color:#00ffff;'>{pulse_indicator}</h3>", "Curiosity Pulse")
     with mcols[2]:
-        render_glass_card(f"### ${forecast_today_val:,.2f}" if forecast_today_val else "PENDING", f"Forecast ({forecast_today_date})")
+        val = f"${forecast_today_val:,.2f}" if forecast_today_val else "PENDING"
+        render_glass_card(f"<h3 style='margin:0; color:#00ffff;'>{val}</h3>", f"Forecast ({forecast_today_date})")
     with mcols[3]:
-        render_glass_card(f"### ${diff:,.2f}", "Tactical Deviation")
+        render_glass_card(f"<h3 style='margin:0; color:#00ffff;'>${diff:,.2f}</h3>", "Tactical Deviation")
 
 def render_signal_attribution_analysis(impact_df):
     """Render the Signal Attribution charting and evaluation."""
@@ -131,11 +132,11 @@ def render_performance_summaries(history_df, clean_df, latest_price_val):
         else:
             st.info("No simulations recorded for today yet.")
 
-def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
+def render_prediction_evaluation_chart(history_df, full_df, live_price, live_res=None):
     """
     Render a split-logic accuracy chart:
     1. Historical Audit (Today-1 and older): Static lines from DB + full_df closes.
-    2. Tactical Monitor (Today): Live Pulsating Dot for active simulation results.
+    2. Tactical Monitor (Today): Live Pulsating Dot for active ticker price.
     """
     if full_df.empty:
         return
@@ -168,7 +169,6 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
     if eval_df.empty:
         st.info("Market feed history is initializing...")
     # --- 2. LIVE DATA PREPARATION (Today) ---
-    live_price = full_df['Close'].iloc[-1]
     # In live_res, dates[0] is Today's prediction
     live_pred = live_res['prices'][0] if (live_res and 'prices' in live_res) else None
     
@@ -332,7 +332,7 @@ def render_prediction_evaluation_chart(history_df, full_df, live_res=None):
             # Audit the active session results
             if live_res and 'prices' in live_res:
                 dist_df = pd.DataFrame({'predicted_price': live_res['prices']})
-                actual_val = full_df['Close'].iloc[-1]
+                actual_val = live_price
                 marker_label = f"Live Price: ${actual_val:,.0f}"
                 marker_color = "#00ffff" # Cyan for Live
             else:
