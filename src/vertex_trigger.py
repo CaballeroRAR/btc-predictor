@@ -65,6 +65,11 @@ def trigger_training_job(service_account=None):
             "replica_count": 1,
             "container_spec": {
                 "image_uri": cloud_config.TRAINING_IMAGE_URI,
+                "env": [
+                    {"name": "PROJECT_ID", "value": cloud_config.PROJECT_ID},
+                    {"name": "BUCKET_NAME", "value": cloud_config.BUCKET_NAME},
+                    {"name": "REGION", "value": cloud_config.REGION},
+                ]
             },
         }]
     )
