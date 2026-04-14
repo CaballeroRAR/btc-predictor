@@ -83,7 +83,20 @@ class ForecastingFacade:
         # Bias = Actual Price - Today's Expected Resolve
         # This anchors the forecast to the live ticker without copying the model's logic.
         shift = reference_price - mean[0]
-        logger.info(f"GROUNDING: Anchoring trajectory to ${reference_price:,.2f} (Shift: {shift:+.2f})")
+        
+        # --- NEURAL REACTIVITY AUDIT ---
+        # We log exactly how much the model 'disagreed' with the raw price
+        # and what trajectory it decided to take.
+        growth_7d = ((mean[6] - mean[0]) / mean[0]) * 100
+        logger.info("\n" + "="*40)
+        logger.info("--- NEURAL REACTIVITY AUDIT ---")
+        logger.info(f"Target Period:  {today_dt}")
+        logger.info(f"Live Price:     ${reference_price:,.2f}")
+        logger.info(f"Raw Model Obs:  ${mean[0]:,.2f}")
+        logger.info(f"Neural Bias:    ${shift:,.2f} ({ (shift/reference_price)*100:+.2f}%)")
+        logger.info(f"Shape Freedom:  7-Day Momentum = {growth_7d:+.2f}%")
+        logger.info("="*40 + "\n")
+        
         mean = mean + shift
 
         # Every point in 'mean' is now a grounded neural prediction for [Today, Tomorrow, ...]
