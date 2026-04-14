@@ -66,50 +66,48 @@ class ForecastingFacade:
         # Persist calibration state
         self.calibration_repo.save_state(avg_drift, reference_price, cloud_config.MODEL_PATH)
 
-        # 4. Strategy Execution with Pulse Injection
-        # We inject Today's live price into the lookback window
-        # to ensure the first prediction is a session-close estimate.
+        # 4. Strategy Execution with Pulse Injection (Injected_df is now 20 Features)
         injected_df = self._inject_intraday_pulse(clean_df, live_ctx, avg_drift)
         recent_data = injected_df.tail(cloud_config.LOOKBACK_DAYS).copy()
 
         # Execute Monte Carlo Inference
-        # The 1st prediction point now represents Today's Close Prediction
-        mean, std = self.strategy.predict(model, scaler, recent_data)
-        tight_std = std * 0.5  # Industrial confidence interval
-
-        # 5. Timeline & Inception Grounding
+        # Returns: Mean and Std of predicted LOG-RETURNS
+        returns_mean, returns_std = self.strategy.predict(model, scaler, recent_data)
+        
+        # 5. Stationary Reconstitution (The Mathematical Core)
+        # We transform predicted log-returns back into USD prices
+        # Starting from the exact Live Reference Price (Inception Grounding)
+        
+        reconstructed_prices = []
+        current_price = reference_price
+        
+        for r in returns_mean:
+            # P_t+1 = P_t * exp(r)
+            current_price = current_price * np.exp(r)
+            reconstructed_prices.append(current_price)
+            
+        mean = np.array(reconstructed_prices)
+        
+        # Approximate price standard deviation for tactical confidence bands
+        std = mean * returns_std
+        tight_std = std * 0.5
+        
+        # 6. Timeline Construction
         today_dt = datetime.now().date()
+        all_dates = [datetime.combine(today_dt, datetime.min.time()) + timedelta(days=i) for i in range(len(mean))]
         
-        # Calculate Level Shift for Inception Grounding
-        # Bias = Actual Price - Today's Expected Resolve
-        # This anchors the forecast to the live ticker without copying the model's logic.
-        shift = reference_price - mean[0]
-        
-        # --- NEURAL REACTIVITY AUDIT ---
+        # --- STATIONARY RECONSTITUTION AUDIT ---
         # We log exactly how much the model 'disagreed' with the raw price
         # and what trajectory it decided to take.
-        growth_7d = ((mean[6] - mean[0]) / mean[0]) * 100
+        growth_30d = ((mean[-1] - reference_price) / reference_price) * 100
         logger.info("\n" + "="*40)
-        logger.info("--- NEURAL REACTIVITY AUDIT ---")
+        logger.info("--- STATIONARY RECONSTITUTION AUDIT ---")
         logger.info(f"Target Period:  {today_dt}")
-        logger.info(f"Live Price:     ${reference_price:,.2f}")
-        logger.info(f"Raw Model Obs:  ${mean[0]:,.2f}")
-        logger.info(f"Neural Bias:    ${shift:,.2f} ({ (shift/reference_price)*100:+.2f}%)")
-        logger.info(f"Shape Freedom:  7-Day Momentum = {growth_7d:+.2f}%")
+        logger.info(f"Reference:      ${reference_price:,.2f}")
+        logger.info(f"Term 1 Return:  {returns_mean[0]:+.4f}")
+        logger.info(f"Term 1 Price:   ${mean[0]:,.2f}")
+        logger.info(f"30D Momentum:   {growth_30d:+.2f}%")
         logger.info("="*40 + "\n")
-        
-        # Apply Soft Momentum Grounding (Default 50% Alignment)
-        # This prevents the 'Mirror' effect by allowing more neural divergence at the start.
-        GROUNDING_FACTOR = float(os.getenv("FORECAST_GROUNDING_FACTOR", 0.5))
-        initial_alignment = (reference_price * GROUNDING_FACTOR) + (mean[0] * (1 - GROUNDING_FACTOR))
-        shift = initial_alignment - mean[0]
-        
-        # Apply decaying shift (Convergence to Raw Neural Opinion by Day 30)
-        decay = np.linspace(1.0, 0.0, len(mean))
-        mean = mean + (shift * decay)
-
-        # Every point in 'mean' is now a grounded neural prediction for [Today, Tomorrow, ...]
-        all_dates = [datetime.combine(today_dt, datetime.min.time()) + timedelta(days=i) for i in range(len(mean))]
         
         dates = all_dates
         mean = mean

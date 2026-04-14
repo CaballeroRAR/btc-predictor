@@ -135,6 +135,44 @@ class IndustrialMarketAdapter:
             
         return pd.DataFrame()
 
+    def fetch_blockchain_metrics(self):
+        """Fetch Bitcoin network hashrate and difficulty (On-chain Pulse)."""
+        self.logger.info("Fetching Bitcoin Network Fundamentals (Blockchain.com)...")
+        # Base url for multiple stats
+        base_url = "https://api.blockchain.info/charts"
+        
+        metrics = {
+            "Hashrate": "hash-rate",
+            "Difficulty": "difficulty"
+        }
+        
+        dfs = []
+        for name, slug in metrics.items():
+            try:
+                # Fetch last 30 days to ensure overlap
+                url = f"{base_url}/{slug}?timespan=30days&format=json&cors=true"
+                resp = requests.get(url, timeout=10)
+                if resp.status_code == 200:
+                    values = resp.json().get('values', [])
+                    if values:
+                        m_df = pd.DataFrame(values)
+                        m_df['x'] = pd.to_datetime(m_df['x'], unit='s')
+                        m_df = m_df.rename(columns={'x': 'Date', 'y': name})
+                        m_df.set_index('Date', inplace=True)
+                        dfs.append(m_df)
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch {name}: {e}")
+        
+        if not dfs:
+            return pd.DataFrame()
+            
+        final_df = dfs[0]
+        for next_df in dfs[1:]:
+            final_df = final_df.join(next_df, how='outer')
+            
+        final_df.ffill(inplace=True)
+        return final_df
+
     def fetch_hourly_views(self, article="Bitcoin"):
         """Fetch 48hr high-resolution curiosity pulse."""
         end_date = datetime.now()

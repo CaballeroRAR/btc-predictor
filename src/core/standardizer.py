@@ -13,13 +13,15 @@ class MarketStandardizer:
     REQUIRED_COLUMNS = [
         'Open', 'High', 'Low', 'Close', 'Volume', 
         'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
-        'Sentiment', 'Google_Trends'
+        'Sentiment', 'Google_Trends',
+        'Log_Return', 'Hashrate', 'Difficulty',
+        'Day_Sin', 'Day_Cos', 'Month_Sin', 'Month_Cos', 'ATR'
     ]
 
     @classmethod
     def enforce_schema(cls, df: pd.DataFrame) -> pd.DataFrame:
-        """Filter and order columns to strictly match the 12-feature tensor requirements."""
-        logger.info(f"Enforcing 12-feature schema on dataset of shape {df.shape}")
+        """Filter and order columns to strictly match the 20-feature tensor requirements."""
+        logger.info(f"Enforcing 20-feature Stationary Schema on dataset of shape {df.shape}")
         
         # Check for missing columns
         missing = [col for col in cls.REQUIRED_COLUMNS if col not in df.columns]
@@ -37,10 +39,11 @@ class MarketStandardizer:
         logger.info(f"Generating sequences: Lookback={lookback}, Forecast={forecast}")
         X, y = [], []
         for i in range(len(scaled_data) - lookback - forecast + 1):
-            # Input features: Scaled tensor (12 features)
+            # Input features: Scaled tensor (20 features)
             X.append(scaled_data[i : i + lookback])
             
-            # Output: Next forecast days closing price (Target at index 3: Close)
-            y.append(scaled_data[i + lookback : i + lookback + forecast, 3])
+            # Output: Next forecast days LOG-RETURNS (Target at index 12: Log_Return)
+            # This is the 'Stationary Target' refactor.
+            y.append(scaled_data[i + lookback : i + lookback + forecast, 12])
             
         return np.array(X), np.array(y)

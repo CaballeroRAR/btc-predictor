@@ -23,14 +23,10 @@ def train_pipeline():
     # 1. Load Data
     _, df = prepare_merged_dataset()
     
-    # 2. Schema Selection (Strict 12-Feature Macro Gravity)
-    expected_cols = [
-        'Open', 'High', 'Low', 'Close', 'Volume', 
-        'BTC_ETH_Ratio', 'BTC_Gold_Ratio', 'DXY', 'US10Y', 'RSI', 
-        'Sentiment', 'Google_Trends'
-    ]
-    df = df[expected_cols]
-    logger.info(f"Training on {df.shape[1]} features. Schema: Macro Gravity.")
+    # 2. Schema Selection (Stationary Log-Return Architecture)
+    from src.core.standardizer import MarketStandardizer
+    df = df[MarketStandardizer.REQUIRED_COLUMNS]
+    logger.info(f"Training on {df.shape[1]} features. Schema: Stationary Log-Return (2.0)")
 
     # 3. Scale Features
     scaler = MinMaxScaler()
