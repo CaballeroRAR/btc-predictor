@@ -3,8 +3,19 @@ build_project_map.py
 Scans src/, scripts/, tests/, infra/, and docker/ and generates
 .agent/memory/project_map.json with the full project module graph.
 
-Run from the project root: python scripts/build_project_map.py
+Usage:
+    python scripts/build_project_map.py
+        Full regeneration. Preserves non-stable last_known_state values
+        from the existing map so in-progress Work Order states are not lost.
+
+    python scripts/build_project_map.py --set-state <state> --paths <path1> <path2> ...
+        Targeted update only. Sets last_known_state for specified paths.
+        No file scanning. Valid states: stable, modified, untested, broken.
+        Example: python scripts/build_project_map.py --set-state modified --paths src/core/standardizer.py
+
+Run from the project root.
 """
+import argparse
 import ast
 import json
 import os
@@ -199,7 +210,91 @@ def collect_files() -> list:
     return collected
 
 
+VALID_STATES = {"stable", "modified", "untested", "broken"}
+NON_STABLE_STATES = {"modified", "untested", "broken"}
+
+
+def load_existing_states() -> dict:
+    """Load last_known_state and notes from existing map. Returns {} if map does not exist."""
+    if not os.path.exists(OUT_PATH):
+        return {}
+    try:
+        with open(OUT_PATH, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+        return {
+            k: {
+                "last_known_state": v.get("last_known_state", "stable"),
+                "notes": v.get("notes", ""),
+            }
+            for k, v in existing.get("modules", {}).items()
+            if v.get("last_known_state") in NON_STABLE_STATES
+        }
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def targeted_set_state(paths: list, state: str) -> None:
+    """Update last_known_state for specific paths without a full rescan."""
+    if state not in VALID_STATES:
+        print(f"ERROR: '{state}' is not a valid state. Choose from: {', '.join(sorted(VALID_STATES))}")
+        raise SystemExit(1)
+
+    if not os.path.exists(OUT_PATH):
+        print("ERROR: project_map.json does not exist. Run without --set-state to generate it first.")
+        raise SystemExit(1)
+
+    with open(OUT_PATH, "r", encoding="utf-8") as f:
+        project_map = json.load(f)
+
+    updated = []
+    not_found = []
+    for path in paths:
+        norm = path.replace("\\", "/")
+        if norm in project_map["modules"]:
+            project_map["modules"][norm]["last_known_state"] = state
+            updated.append(norm)
+        else:
+            not_found.append(norm)
+
+    project_map["generated_at"] = datetime.now(timezone.utc).isoformat()
+
+    with open(OUT_PATH, "w", encoding="utf-8") as f:
+        json.dump(project_map, f, indent=2)
+
+    for u in updated:
+        print(f"  SET {u} -> {state}")
+    for nf in not_found:
+        print(f"  NOT FOUND in map: {nf}")
+    print(f"Targeted update complete. {len(updated)} path(s) updated.")
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Build or update project_map.json")
+    parser.add_argument(
+        "--set-state",
+        metavar="STATE",
+        help="Targeted update: set last_known_state for --paths. No scanning.",
+    )
+    parser.add_argument(
+        "--paths",
+        nargs="+",
+        metavar="PATH",
+        help="File paths to update when using --set-state.",
+    )
+    args = parser.parse_args()
+
+    # --- Targeted update mode ---
+    if args.set_state:
+        if not args.paths:
+            print("ERROR: --set-state requires --paths.")
+            raise SystemExit(1)
+        targeted_set_state(args.paths, args.set_state)
+        return
+
+    # --- Full regeneration mode ---
+    # Preserve non-stable states from the existing map before overwriting
+    preserved_states = load_existing_states()
+
     all_files = collect_files()
     all_norm = {normalize(f) for f in all_files}
 
@@ -211,48 +306,44 @@ def main():
         pattern = get_pattern(norm)
         stat = os.stat(filepath)
 
-        # Import parsing only applies to Python files
         project_imports = get_project_imports(filepath, all_norm) if ext == ".py" else []
 
-        # Structural relationships for non-Python files
         related_to = []
         if norm in TEST_TARGETS and TEST_TARGETS[norm] in all_norm:
             related_to.append(TEST_TARGETS[norm])
         if norm in INFRA_TARGETS and INFRA_TARGETS[norm] in all_norm:
             related_to.append(INFRA_TARGETS[norm])
 
+        # Carry forward non-stable state if one was recorded; default to stable
+        preserved = preserved_states.get(norm, {})
         modules[norm] = {
             "path": norm,
             "pattern": pattern,
             "responsible_agent": agent,
             "ml_tier": tier,
             "imports_from_project": project_imports,
-            "related_to": related_to,           # for scripts, tests, infra, docker
-            "imported_by": [],                  # populated in second pass
-            "test_file": None,                  # filled in second pass for src files
+            "related_to": related_to,
+            "imported_by": [],
+            "test_file": None,
             "has_tests": False,
-            "last_known_state": "stable",
+            "last_known_state": preserved.get("last_known_state", "stable"),
             "size_bytes": stat.st_size,
-            "notes": ""
+            "notes": preserved.get("notes", ""),
         }
 
-    # Second pass: imported_by reverse index (Python only)
     for norm, entry in modules.items():
         for dep in entry["imports_from_project"]:
             if dep in modules and norm not in modules[dep]["imported_by"]:
                 modules[dep]["imported_by"].append(norm)
 
-    # Third pass: link test files to their src targets
     for test_norm, src_norm in TEST_TARGETS.items():
         if src_norm in modules:
             modules[src_norm]["test_file"] = test_norm
             modules[src_norm]["has_tests"] = True
 
-    # Also detect Python test files by naming convention
     for norm in list(modules.keys()):
         if norm.startswith("tests/") and norm.endswith(".py"):
             basename = os.path.basename(norm)
-            # test_foo.py -> look for src/**/foo.py
             stem = basename.replace("test_", "").replace(".py", "")
             for candidate in all_norm:
                 if candidate.startswith("src/") and candidate.endswith(f"{stem}.py"):
@@ -260,12 +351,11 @@ def main():
                         modules[candidate]["test_file"] = norm
                         modules[candidate]["has_tests"] = True
 
-    # Sort imported_by for determinism
     for entry in modules.values():
         entry["imported_by"] = sorted(entry["imported_by"])
 
     project_map = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "root": ROOT.replace("\\", "/"),
         "total_modules": len(modules),
@@ -276,17 +366,20 @@ def main():
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         json.dump(project_map, f, indent=2)
 
-    # Summary by root
     counts = {}
     for norm in modules:
         root = norm.split("/")[0]
         counts[root] = counts.get(root, 0) + 1
 
-    print(f"Project map written: {OUT_PATH}")
+    preserved_count = len(preserved_states)
+    print(f"Project map written: {OUT_PATH} (schema v1.2)")
     print(f"Total modules indexed: {len(modules)}")
+    if preserved_count:
+        print(f"Non-stable states preserved: {preserved_count}")
     for root, count in sorted(counts.items()):
         print(f"  {root}/: {count} files")
 
 
 if __name__ == "__main__":
     main()
+
