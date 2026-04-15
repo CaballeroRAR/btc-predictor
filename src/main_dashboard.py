@@ -7,7 +7,7 @@ sys.path.append(root_path)
 sys.path.append(src_path)
 
 import streamlit as st
-st.set_page_config(layout="wide", page_title="BTC Pulse Predictor", page_icon="📈")
+st.set_page_config(layout="wide", page_title="BTC Pulse Predictor")
 import pandas as pd
 import numpy as np
 import os
@@ -87,7 +87,7 @@ inject_industrial_theme()
 
 # UI Layout
 st.markdown("<h1 style='color: #00ffff; font-family: monospace;'>BTC PULSE PREDICTOR</h1>", unsafe_allow_html=True)
-st.caption("Powered by LSTM and Market Psychology · Phase 4 HUD Active")
+st.caption("Powered by LSTM and Market Psychology | Phase 4 HUD Active")
 
 if model and scaler and not full_df.empty:
     # 3. Sync Actuals (Non-blocking spinner)

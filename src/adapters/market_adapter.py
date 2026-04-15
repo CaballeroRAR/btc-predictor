@@ -85,9 +85,11 @@ class IndustrialMarketAdapter:
                     df = df.rename(columns={'timestamp': 'Date', 'views': 'Curiosity_Raw'})
                     df.set_index('Date', inplace=True)
                     
-                    # Normalize (0-100)
-                    v_min, v_max = df['Curiosity_Raw'].min(), df['Curiosity_Raw'].max()
-                    df['Google_Trends'] = (df['Curiosity_Raw'] - v_min) / (v_max - v_min) * 100
+                    # Normalize (0-100) using fixed absolute scale.
+                    # A window-relative min-max causes distribution shift across ingestion runs.
+                    # WIKI_VIEWS_FIXED_MAX anchors to the known historical Bitcoin article peak.
+                    WIKI_VIEWS_FIXED_MAX = 200_000
+                    df['Google_Trends'] = (df['Curiosity_Raw'] / WIKI_VIEWS_FIXED_MAX * 100).clip(0, 100)
                     return df[['Google_Trends']]
         except Exception as e:
             self.logger.error(f"Wikimedia API failure: {e}")
