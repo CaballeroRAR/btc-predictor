@@ -13,6 +13,8 @@ import numpy as np
 import os
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
+from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # 1. Configuration & Secrets
 import src.cloud_config as cloud_config
@@ -64,22 +66,34 @@ st.sidebar.header("Global Controls")
 force_refresh = st.sidebar.button("Force Market Refresh", width='stretch')
 
 if force_refresh:
-    print(f"[{datetime.now()}] [CACHE] User triggered Global Market Refresh. Flushing all state and analytical caches.")
-    st.sidebar.warning("Flushing Market Cache...")
+    logger.info("User triggered Global Market Refresh. Flushing caches and preserving session context.")
     st.cache_data.clear()
+    
+    # Store critical session keys to preserve after clear
+    auth = st.session_state.get("authenticated")
+    nav = st.session_state.get("nav_tab")
+    
     st.session_state.clear()
-    st.session_state["authenticated"] = True
+    
+    # Restore critical keys and set the pending flag
+    if auth: st.session_state["authenticated"] = auth
+    if nav: st.session_state["nav_tab"] = nav
+    st.session_state["pending_force_refresh"] = True
+    
     st.rerun()
 
 # 2. Market Data Orchestration
 if 'last_market_sync' not in st.session_state:
     st.session_state['last_market_sync'] = datetime.now() - timedelta(hours=1) # Force first pull
 
+# Check for pending refresh flag
+active_force = st.session_state.pop("pending_force_refresh", False) or force_refresh
+
 @st.cache_data
 def load_market_data(force=False):
     return lifecycle_manager.load_dataset(force=force)
 
-full_df = load_market_data(force=force_refresh)
+full_df = load_market_data(force=active_force)
 clean_df = full_df # In this architecture, orchestrator handles cleaning
 
 # Inject High-Performance CSS
@@ -102,7 +116,7 @@ if model and scaler and not full_df.empty:
     
     # Check if market data needs refresh
     time_since_market = (now - st.session_state.get('last_market_sync', now - timedelta(hours=1))).total_seconds()
-    should_refresh_market = force_refresh or (time_since_market > SYNC_WINDOW_MINUTES * 60)
+    should_refresh_market = active_force or (time_since_market > SYNC_WINDOW_MINUTES * 60)
     
     if should_refresh_market or 'live_ctx_cache' not in st.session_state:
         with st.spinner("Refreshing Global Market Pulse..."):
@@ -118,9 +132,13 @@ if model and scaler and not full_df.empty:
     # 5. Orchestrate Forecast
     if 'base_forecast' not in st.session_state:
         # If market was just refreshed, we force a fresh neural inference
-        force_infer = should_refresh_market
+        force_infer = active_force or should_refresh_market
         with st.spinner("Initializing Latest Market Forecast..."):
-            st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, clean_df, force=force_infer)
+            st.session_state['base_forecast'] = forecaster.get_forecast(
+                model, scaler, clean_df, 
+                force=force_infer, 
+                trigger_type="MANUAL_REFRESH" if active_force else "AUTO"
+            )
     
     base_res = st.session_state['base_forecast']
     if base_res.get('is_cached'):
@@ -195,7 +213,11 @@ if model and scaler and not full_df.empty:
                         logger.info(f"Smart Recalibrate: Data is fresh ({time_since_sync:.1f}m). Using fast-track recalibration.")
                         f_clean = clean_df
                     
-                    st.session_state['base_forecast'] = forecaster.get_forecast(model, scaler, f_clean, force=True)
+                    st.session_state['base_forecast'] = forecaster.get_forecast(
+                        model, scaler, f_clean, 
+                        force=True, 
+                        trigger_type="MANUAL_REFRESH"
+                    )
                     st.rerun()
 
         st.divider()
@@ -266,6 +288,13 @@ if model and scaler and not full_df.empty:
     if active_tab == "Market Analysis":
         res = st.session_state['base_forecast']
         
+        # Throttled retrieval of the latest manual pulse baseline
+        if 'manual_snapshot' not in st.session_state or should_refresh_market:
+            with st.spinner("Retrieving Manual Baseline..."):
+                st.session_state['manual_snapshot'] = forecaster.firestore_repo.get_latest_manual_snapshot()
+        
+        man_res = st.session_state.get('manual_snapshot')
+        
         # Display summary with the live price and curiosity pulse
         ui.render_market_summary_metrics(
             latest_price_val, 
@@ -304,11 +333,30 @@ if model and scaler and not full_df.empty:
             # Note: Backtest is in 'res' (base_forecast), not in 'r' (simulation)
             fig.add_trace(go.Scatter(x=res['backtest'].index, y=res['backtest'].values, name='Model (Backtest)', line=dict(color='cyan', dash='dot', width=1)))
             
+            # 1. Latest Manual Refresh Baseline (Static Baseline)
+            if man_res:
+                man_dt = man_res.get('timestamp')
+                man_str = man_dt.strftime('%m/%d %H:%M') if isinstance(man_dt, datetime) else "N/A"
+                fig.add_trace(go.Scatter(
+                    x=[pd.to_datetime(d) for d in man_res['dates']], 
+                    y=man_res['prices'],
+                    name=f'Latest Refresh State ({man_str})',
+                    mode='lines',
+                    line=dict(color='#ffaa00', width=4.5, dash='dot'), # Thicker dotted line to peek through
+                    opacity=0.8
+                ))
+
+            # 2. Confidence Interval (Today's Active Model)
             fig.add_trace(go.Scatter(x=r.forecast_dates, y=np.array(r.forecast_prices)+np.array(r.std), mode='lines', line=dict(width=0), showlegend=False))
             fig.add_trace(go.Scatter(x=r.forecast_dates, y=np.array(r.forecast_prices)-np.array(r.std), mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(0, 255, 0, 0.1)', name='68% CI'))
+            
+            # 3. Forecast Mean (Today's Active Model)
+            res_dt = res.get('calculation_time') or res.get('timestamp')
+            res_str = res_dt.strftime('%H:%M') if isinstance(res_dt, datetime) else "Live"
+            
             fig.add_trace(go.Scatter(
                 x=r.forecast_dates, y=r.forecast_prices, 
-                name='Forecast Mean', 
+                name=f'Forecast Mean ({res_str})', 
                 mode='lines+markers',
                 line=dict(color='#00ff00', width=3),
                 marker=dict(size=8, symbol='circle')
@@ -320,15 +368,22 @@ if model and scaler and not full_df.empty:
             # --- ENTRY SNAPSHOT OVERLAY ---
             investments = simulator.get_journal_entries()
             if investments:
-                latest_inv = sorted(investments, key=lambda x: x.get('timestamp', ''), reverse=True)[0]
+                # Sort by created_at or timestamp to find the most recent snapshot
+                latest_inv = sorted(investments, key=lambda x: x.get('created_at', ''), reverse=True)[0]
+                
                 if 'forecast_prices' in latest_inv and 'forecast_dates' in latest_inv:
                     e_dates = [pd.to_datetime(d) for d in latest_inv['forecast_dates']]
                     e_prices = latest_inv['forecast_prices']
+                    
+                    # Format display date
+                    snap_dt = latest_inv.get('created_at')
+                    snap_str = snap_dt.strftime('%m/%d %H:%M') if isinstance(snap_dt, datetime) else "Unknown"
+                    
                     fig.add_trace(go.Scatter(
                         x=e_dates, y=e_prices, 
-                        name='Last Entry State', 
+                        name=f'Last Entry State ({snap_str})', 
                         mode='lines',
-                        line=dict(color='rgba(0, 150, 255, 0.4)', width=1, dash='dot')
+                        line=dict(color='rgba(0, 200, 255, 0.6)', width=1.5, dash='dot')
                     ))
         
         fig.update_layout(

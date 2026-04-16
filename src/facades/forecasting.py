@@ -28,7 +28,7 @@ class ForecastingFacade:
         self.firestore_repo = FirestoreRepository()
         self.assets = AssetRepository()
 
-    def get_forecast(self, model, scaler, clean_df, force=False, source="USER", include_impact=True):
+    def get_forecast(self, model, scaler, clean_df, force=False, source="USER", include_impact=True, trigger_type="AUTO"):
         """
         Executes the full forecasting pipeline with caching.
         """
@@ -152,7 +152,8 @@ class ForecastingFacade:
             'std': tight_std.tolist(),
             'backtest_values': backtest_series.values.tolist(),
             'backtest_dates': [d.strftime('%Y-%m-%d') for d in backtest_series.index],
-            'avg_drift': avg_drift
+            'avg_drift': avg_drift,
+            'trigger_type': trigger_type
         }
         self.firestore_repo.save_system_snapshot(results)
 

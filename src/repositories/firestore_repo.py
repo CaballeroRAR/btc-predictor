@@ -1,4 +1,5 @@
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 import os
 from src.repositories.base import BaseRepository
 from src import cloud_config
@@ -53,7 +54,7 @@ class FirestoreRepository(BaseRepository):
             
             if filters:
                 for f in filters:
-                    ref = ref.where(f[0], f[1], f[2])
+                    ref = ref.where(filter=FieldFilter(f[0], f[1], f[2]))
             
             if order_by:
                 direction = firestore.Query.DESCENDING if descending else firestore.Query.ASCENDING
@@ -91,6 +92,34 @@ class FirestoreRepository(BaseRepository):
                 return data
         except Exception as e:
             self.logger.error(f"Failed to retrieve latest snapshot: {str(e)}")
+        return None
+
+    def get_latest_manual_snapshot(self):
+        """Retrieve the most recent manual refresh snapshot for HUD comparisons."""
+        self.logger.info("Querying latest MANUAL_REFRESH snapshot")
+        try:
+            # High-Performance Path: Server-side filtered & ordered (Requires Index)
+            query = self.db.collection('snapshots').where(filter=FieldFilter('trigger_type', '==', 'MANUAL_REFRESH'))
+            docs = query.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1).stream()
+            for doc in docs:
+                data = doc.to_dict()
+                data['document_id'] = doc.id
+                return data
+        except Exception as e:
+            if "index" in str(e).lower():
+                self.logger.warning("HUD INDEX MISSING: Falling back to client-side scan.")
+                # Resilience Path: Fetch recent documents and filter in memory
+                try:
+                    docs = self.db.collection('snapshots').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(50).stream()
+                    for doc in docs:
+                        data = doc.to_dict()
+                        if data.get('trigger_type') == 'MANUAL_REFRESH':
+                            data['document_id'] = doc.id
+                            return data
+                except Exception as inner_e:
+                    self.logger.error(f"HUD Resilience fallback failed: {str(inner_e)}")
+            else:
+                self.logger.error(f"Failed to retrieve manual refresh snapshot: {str(e)}")
         return None
 
     def save_system_snapshot(self, results_data: dict):
