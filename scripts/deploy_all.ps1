@@ -8,9 +8,20 @@
     3. Deploys the latest Dashboard image to Google Cloud Run.
 #>
 
-$PROJECT_ID = "btc-predictor-492515"
-$REGION = "us-central1"
-$BUCKET = "btc_predictor_models"
+# --- Environment & Secret Loading ---
+$DOTENV_PATH = ".env"
+if (Test-Path $DOTENV_PATH) {
+    Write-Host "Loading environment from $DOTENV_PATH..." -ForegroundColor Gray
+    Get-Content $DOTENV_PATH | Where-Object { $_ -match '=' -and $_ -notmatch '^#' } | ForEach-Object {
+        $name, $value = $_ -split '=', 2
+        Set-Variable -Name $name.Trim() -Value $value.Trim() -Scope Global
+    }
+} else {
+    Write-Error "CRITICAL: .env file missing. Cannot proceed with deployment."
+    exit 1
+}
+
+# Calculated Globals
 $DASHBOARD_IMAGE = "gcr.io/$PROJECT_ID/btc-dashboard"
 $TRAINER_IMAGE = "gcr.io/$PROJECT_ID/btc-trainer"
 
@@ -19,8 +30,8 @@ Write-Host "STARTING BTC Predictor Deployment Pipeline..." -ForegroundColor Cyan
 # 1. Synchronize Model Weights
 Write-Host "`n[1/4] Syncing local weights to GCS..." -ForegroundColor Yellow
 if (Test-Path "models/btc_lstm_model.h5") {
-    gcloud storage cp models/btc_lstm_model.h5 "gs://$BUCKET/models/btc_lstm_model.h5"
-    gcloud storage cp models/scaler.pkl "gs://$BUCKET/models/scaler.pkl"
+    gcloud storage cp models/btc_lstm_model.h5 "gs://$BUCKET_NAME/models/btc_lstm_model.h5"
+    gcloud storage cp models/scaler.pkl "gs://$BUCKET_NAME/models/scaler.pkl"
     Write-Host "SUCCESS: Model weights synced." -ForegroundColor Green
 } else {
     Write-Host "WARNING: local models/btc_lstm_model.h5 not found. Skipping weight sync." -ForegroundColor Red
@@ -45,9 +56,8 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for Dashboard."; exit $LAST
 Write-Host "`n[4/4] Deploying Dashboards and Workers to Cloud Run..." -ForegroundColor Yellow
 
 $SA_EMAIL = "btc-forecaster-sa@$PROJECT_ID.iam.gserviceaccount.com"
-# Using single-quoted literals to prevent PowerShell from eating $ and " symbols
-$PASSWORDS = 'DASHBOARD_PASSWORD=btc1984,DASHBOARD_PASS_1=E(nC>D8<<279oNV@,DASHBOARD_PASS_2=727C?O%yDb-G?4=N,DASHBOARD_PASS_3=1(OcJ=1j$uE"p98I,DASHBOARD_PASS_4=%k):7J5j5MY<f/_O'
-$ENV_VARS = "PROJECT_ID=$PROJECT_ID,SERVICE_ACCOUNT=$SA_EMAIL,BUCKET_NAME=$BUCKET,FIRESTORE_DATABASE=btc-pred-db,$PASSWORDS"
+$PASSWORDS = "DASHBOARD_PASSWORD=$DASHBOARD_PASSWORD,DASHBOARD_PASS_1=$DASHBOARD_PASS_1,DASHBOARD_PASS_2=$DASHBOARD_PASS_2,DASHBOARD_PASS_3=$DASHBOARD_PASS_3,DASHBOARD_PASS_4=$DASHBOARD_PASS_4"
+$ENV_VARS = "PROJECT_ID=$PROJECT_ID,SERVICE_ACCOUNT=$SA_EMAIL,BUCKET_NAME=$BUCKET_NAME,FIRESTORE_DATABASE=btc-pred-db,$PASSWORDS"
 
 # 4a. Dashboard Deploy
 gcloud run deploy btc-dashboard `

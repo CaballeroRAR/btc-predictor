@@ -1,0 +1,8 @@
+{
+    "last_calibration_date": "2026-04-15 21:49:16.676833",
+    "drift_value": -4.662214637939934,
+    "reference_price": 74973.046875,
+    "model_path": "models\\btc_lstm_model.h5",
+    "schema_version": 1,
+    "updated_at": "Sentinel: Value used to set a document field to the server timestamp."
+}

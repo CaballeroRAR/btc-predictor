@@ -17,6 +17,7 @@ data/prediction_history.csv
 data/calibration_state.json
 data/investments.json
 data/hourly_cache.json
+data/resilience/daily_predictions/*.json
 
 # Model Binary Files (Stored in GCS, not Git)
 models/*.h5

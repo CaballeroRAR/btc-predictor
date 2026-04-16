@@ -1,20 +1,29 @@
-# Vertex AI Training Dockerfile (CPU Optimized)
-FROM python:3.10-slim
+# --- Stage 1: Builder ---
+FROM python:3.10-slim AS builder
 
-ENV PYTHONPATH /app
 WORKDIR /app
 
-# Install system dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
+# Install python dependencies to a local directory
 COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
+RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Copy source code (cloud_config is inside src/)
+
+# --- Stage 2: Runtime ---
+FROM python:3.10-slim AS runtime
+
+WORKDIR /app
+
+# Copy only the installed packages from the builder stage
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+ENV PYTHONPATH=/app
+
+# Copy source code
 COPY src/ /app/src/
 
 # Entry point for training

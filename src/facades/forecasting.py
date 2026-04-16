@@ -73,39 +73,66 @@ class ForecastingFacade:
         recent_data = injected_df.tail(cloud_config.LOOKBACK_DAYS).copy()
 
         # Execute Monte Carlo Inference
-        # The 1st prediction point now represents Today's Close Prediction
-        mean, std = self.strategy.predict(model, scaler, recent_data)
-        tight_std = std * 0.5  # Industrial confidence interval
-
-        # 5. Timeline & Inception Grounding
+        # Returns (Batch, Time, features) or similar - we need the first forecast day
+        m_raw, s_raw = self.strategy.predict(model, scaler, recent_data)
+        
+        # Refinement: Global Scalar Hardening
+        # Ensures mean[0] and std[0] are always scalars regardless of model architecture
+        mean = np.array(m_raw).flatten()
+        std = np.array(s_raw).flatten()
+        tight_std = std * 0.5
+        
+        # 5. Timeline & Inception Grounding (Refinement F-03)
         today_dt = datetime.now().date()
         
-        # Calculate Level Shift for Inception Grounding
-        # Bias = Actual Price - Today's Expected Resolve
-        # This anchors the forecast to the live ticker without copying the model's logic.
-        shift = reference_price - mean[0]
+        # Neural Bias: Absolute % difference between Model Observation and Reality
+        neural_bias_pct = abs(reference_price - mean[0]) / reference_price
         
-        # --- NEURAL REACTIVITY AUDIT ---
-        # We log exactly how much the model 'disagreed' with the raw price
-        # and what trajectory it decided to take.
-        growth_7d = ((mean[6] - mean[0]) / mean[0]) * 100
-        logger.info("\n" + "="*40)
-        logger.info("--- NEURAL REACTIVITY AUDIT ---")
-        logger.info(f"Target Period:  {today_dt}")
-        logger.info(f"Live Price:     ${reference_price:,.2f}")
-        logger.info(f"Raw Model Obs:  ${mean[0]:,.2f}")
-        logger.info(f"Neural Bias:    ${shift:,.2f} ({ (shift/reference_price)*100:+.2f}%)")
-        logger.info(f"Shape Freedom:  7-Day Momentum = {growth_7d:+.2f}%")
-        logger.info("="*40 + "\n")
+        # Volatility Metric: Use the 1st day MC Standard Deviation as a % of price
+        expected_variance = float((tight_std[0] / mean[0]) * 100)
         
-        # Apply Soft Momentum Grounding (Default 50% Alignment)
-        # This prevents the 'Mirror' effect by allowing more neural divergence at the start.
-        GROUNDING_FACTOR = float(os.getenv("FORECAST_GROUNDING_FACTOR", 0.5))
-        initial_alignment = (reference_price * GROUNDING_FACTOR) + (mean[0] * (1 - GROUNDING_FACTOR))
+        # --- MOMENTUM-FAVORED GROUNDING LOGIC ---
+        # User decision: Favor Neural Model during high volatility.
+        # Implementation: Decrease GROUNDING_FACTOR as variance increases.
+        BASE_G = float(os.getenv("FORECAST_GROUNDING_FACTOR", 0.5))
+        
+        # If variance > 2.5%, we start scaling down the anchor to favor momentum
+        volatility_threshold = 2.5 
+        if expected_variance > volatility_threshold:
+            # Decay the grounding factor: deeper uncertainty = higher model autonomy
+            adaptive_g = BASE_G * np.exp(-(expected_variance - volatility_threshold) / 5.0)
+            adaptive_g = max(adaptive_g, 0.1) # Floor at 10% to prevent full disconnection
+        else:
+            adaptive_g = BASE_G
+
+        initial_alignment = (reference_price * adaptive_g) + (mean[0] * (1 - adaptive_g))
         shift = initial_alignment - mean[0]
         
-        # Apply decaying shift (Convergence to Raw Neural Opinion by Day 30)
-        decay = np.linspace(1.0, 0.0, len(mean))
+        # --- NEURAL REACTIVITY AUDIT ---
+        if len(mean) >= 7:
+            growth_7d = ((mean[6] - mean[0]) / mean[0]) * 100
+        else:
+            growth_7d = 0.0 # Fallback for single-point forecasts
+            
+        logger.info("\n" + "="*40)
+        logger.info("--- NEURAL REACTIVITY AUDIT (REFINED) ---")
+        logger.info(f"Target Period:  {today_dt}")
+        logger.info(f"Live Price:     ${float(reference_price):,.2f}")
+        logger.info(f"Neural Obs:     ${float(mean[0]):,.2f}")
+        logger.info(f"Model Variance: {float(expected_variance):.2f}%")
+        logger.info(f"Adaptive G:     {float(adaptive_g):.2f} (Favor: {'MODEL' if adaptive_g < BASE_G else 'PRICE'})")
+        logger.info(f"Neural Bias:    ${float(reference_price - mean[0]):,.2f} ({float(neural_bias_pct)*100:+.2f}%)")
+        logger.info(f"7-Day Momentum: {float(growth_7d):+.2f}%")
+        logger.info("="*40 + "\n")
+        
+        # REFINEMENT: Confidence-Weighted Decay
+        x_steps = np.linspace(0, 10, len(mean))
+        # Logistic decay: slower at first, then drops off to 0
+        decay = 1 / (1 + np.exp(x_steps - 5)) 
+        # Normalize decay to start at 1.0
+        decay = decay / decay[0]
+        
+        # Apply the grounded shift to the entire forecast horizon
         mean = mean + (shift * decay)
 
         # Every point in 'mean' is now a grounded neural prediction for [Today, Tomorrow, ...]
@@ -304,5 +331,4 @@ class ForecastingFacade:
             'std': np.array(snapshot['std']),
             'backtest': pd.Series(snapshot['backtest_values'], index=pd.to_datetime(snapshot['backtest_dates'])),
         }
-
 

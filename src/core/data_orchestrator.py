@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
 from src.utils.logger import setup_logger
@@ -50,16 +51,19 @@ class DataOrchestrator:
         
         # 3. Hybrid Signal Processing (Curiosity Multiplier)
         if not wiki_df.empty:
-            # P-03: Applying today's RSS sentiment as a global scalar to years of history
-            # creates a training-inference mismatch. We isolate it to the live row only.
+            # P-03: Refinement. Isolate live RSS sentiment to the final observation.
+            # This ensures that historical training rows remain "pure" while 
+            # the live pulse captures intraday volatility.
             latest_date = wiki_df.index[-1]
-            wiki_df.loc[latest_date, 'Google_Trends'] *= (1 + rss_sentiment)
+            multiplier = 1 + np.clip(rss_sentiment, -0.5, 0.5) # Guard against extreme sentiment spikes
+            wiki_df.loc[latest_date, 'Google_Trends'] *= multiplier
             wiki_df['Google_Trends'] = wiki_df['Google_Trends'].clip(0, 100)
+            self.logger.info(f"SIGNAL: Applied {rss_sentiment:+.2f} live sentiment multiplier to {latest_date.date()}")
         else:
             self.logger.warning("CORE: Wikipedia views unavailable. Using neutral baseline (50.0).")
             wiki_df = pd.DataFrame({"Google_Trends": [50.0]})
 
-        # 4. Gap Recovery (Yesterday Stitch)
+        # 1. Gap Recovery: Harden the yesterday stitch logic
         price_df = self._stitch_yesterday_gap(price_df)
         
         # 5. Alignment & Standardization
@@ -82,33 +86,52 @@ class DataOrchestrator:
         return final_df
 
     def _stitch_yesterday_gap(self, price_df):
-        """Recovers a missing yesterday close via high-resolution hourly data."""
-        yesterday = (datetime.now() - timedelta(days=1)).date()
-        if not price_df.empty and price_df.index[-1].date() < yesterday:
-            self.logger.info(f"GAP DETECTED: Recovering finalized data for {yesterday}...")
+        """
+        Recovers a missing yesterday close via high-resolution hourly data.
+        Refinement: Timezone-aware normalization and robust download fallback.
+        """
+        now = datetime.now(timezone.utc)
+        yesterday_utc = (now - timedelta(days=1)).date()
+        
+        if not price_df.empty and price_df.index[-1].date() < yesterday_utc:
+            self.logger.info(f"GAP DETECTED: Recovering finalized data for {yesterday_utc} UTC...")
             try:
-                ticker = yf.Ticker("BTC-USD")
-                hist_h = ticker.history(period="2d", interval="1h")
-                yesterday_dt = pd.to_datetime(yesterday)
-                if not hist_h.empty and yesterday_dt in hist_h.index.normalize():
-                    y_close = hist_h[hist_h.index.normalize() == yesterday_dt]['Close'].iloc[-1]
-                    y_row = price_df.iloc[-1:].copy()
-                    y_row.index = [yesterday_dt]
-                    y_row['Close'] = float(y_close)
-                    price_df = pd.concat([price_df, y_row])
-                    self.logger.info(f"STITCH SUCCESS: Added {yesterday} @ ${float(y_close):,.2f}")
+                # Use download for better multi-asset stability in the stitch path
+                hist_h = yf.download("BTC-USD", period="2d", interval="1h", progress=False)
+                if not hist_h.empty:
+                    # Normalize both to UTC for alignment
+                    hist_h.index = hist_h.index.tz_convert(None)
+                    yesterday_dt = pd.to_datetime(yesterday_utc)
+                    
+                    # Find the last hourly close of yesterday
+                    mask = hist_h.index.normalize() == yesterday_dt
+                    if mask.any():
+                        y_close = hist_h[mask]['Close'].iloc[-1]
+                        y_row = price_df.iloc[-1:].copy()
+                        y_row.index = [yesterday_dt]
+                        y_row['Close'] = float(y_close)
+                        price_df = pd.concat([price_df, y_row])
+                        self.logger.info(f"STITCH SUCCESS: Added {yesterday_utc} @ ${float(y_close):,.2f}")
+                    else:
+                        self.logger.warning(f"STITCH FAILED: No data points found for {yesterday_utc} in 48h window.")
                 else:
-                    self.logger.warning(f"STITCH FAILED: No hourly data found for {yesterday}.")
+                    self.logger.warning(f"STITCH FAILED: yfinance returned empty hourly dataset.")
             except Exception as e:
-                self.logger.warning(f"STITCH FAILED: Could not recover {yesterday} ({e})")
+                self.logger.warning(f"STITCH FAILED: Could not recover {yesterday_utc} ({e})")
         return price_df
 
     def _apply_temporal_guard(self, df):
-        """Drops incomplete current-day bars if it is too early in the UTC day."""
-        today = datetime.now(timezone.utc).date()
-        current_hour = datetime.now(timezone.utc).hour
-        if df.index[-1].date() == today and current_hour < 10:
-            self.logger.info("GUARD: Dropping early (incomplete) today candle.")
+        """
+        Drops incomplete current-day bars if it is too early in the UTC day.
+        Ensures the model doesn't train on 'partial' candles.
+        """
+        now = datetime.now(timezone.utc)
+        today = now.date()
+        current_hour = now.hour
+        
+        # Only drop if the last row is Today and it's before 10:00 UTC (Incomplete volume)
+        if not df.empty and df.index[-1].date() == today and current_hour < 10:
+            self.logger.info(f"GUARD: Dropping early ({current_hour}:00 UTC) today candle.")
             return df.iloc[:-1]
         return df
 

@@ -1,22 +1,36 @@
-# Use an official Python runtime as a parent image
-FROM python:3.11-slim
+# --- Stage 1: Builder ---
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install python dependencies to a local directory
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+
+# --- Stage 2: Runtime ---
+FROM python:3.11-slim AS runtime
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 ENV PYTHONPATH /app
+ENV PATH=/root/.local/bin:$PATH
 
-# Install system dependencies needed for UI components (Plotly/Streamlit)
+WORKDIR /app
+
+# Install runtime dependencies (e.g., libgomp for lightgbm/tensorflow)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory
-WORKDIR /app
-
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy only the installed packages from the builder stage
+COPY --from=builder /root/.local /root/.local
 
 # Copy the rest of the application code
 COPY . .

@@ -4,6 +4,7 @@ import requests
 import os
 from datetime import datetime, timedelta
 import numpy as np
+from tenacity import retry, stop_after_attempt, wait_exponential
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import feedparser
 from src.utils.logger import setup_logger
@@ -19,8 +20,9 @@ class IndustrialMarketAdapter:
         self.analyzer = SentimentIntensityAnalyzer()
         self.user_agent = 'BTCPredictorIndustrial/1.0 (contact: caballero.data.scientist@tutamail.com)'
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def fetch_price_data(self, years=cloud_config.YEARS_HISTORY):
-        """Fetch historical BTC, ETH, Gold, and Oil data."""
+        """Fetch historical BTC, ETH, Gold, and Oil data with exponential backoff."""
         end_date = datetime.now()
         start_date = end_date - timedelta(days=years * 365)
         
@@ -36,7 +38,7 @@ class IndustrialMarketAdapter:
         
         dfs = {}
         for name, ticker_cmd in assets.items():
-            df = yf.download(ticker_cmd, start=start_date, interval="1d")
+            df = yf.download(ticker_cmd, start=start_date, interval="1d", progress=False)
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             dfs[name] = df
@@ -63,8 +65,9 @@ class IndustrialMarketAdapter:
         
         return df
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def fetch_wikipedia_views(self, article="Bitcoin", years=cloud_config.YEARS_HISTORY):
-        """Fetch historical Wikipedia pageviews."""
+        """Fetch historical Wikipedia pageviews with adaptive scaling."""
         self.logger.info(f"Fetching Wikimedia views for '{article}'...")
         end_date = datetime.now()
         start_date = end_date - timedelta(days=years * 365)
@@ -85,17 +88,21 @@ class IndustrialMarketAdapter:
                     df = df.rename(columns={'timestamp': 'Date', 'views': 'Curiosity_Raw'})
                     df.set_index('Date', inplace=True)
                     
-                    # Normalize (0-100) using fixed absolute scale.
-                    # A window-relative min-max causes distribution shift across ingestion runs.
-                    # WIKI_VIEWS_FIXED_MAX anchors to the known historical Bitcoin article peak.
-                    WIKI_VIEWS_FIXED_MAX = 200_000
-                    df['Google_Trends'] = (df['Curiosity_Raw'] / WIKI_VIEWS_FIXED_MAX * 100).clip(0, 100)
+                    # Refinement F-01: Adaptive Scaling. 
+                    historical_peak = df['Curiosity_Raw'].max()
+                    adaptive_max = historical_peak * 1.2
+                    
+                    self.logger.info(f"Wiki Scaling: Local Peak={historical_peak:,.0f}, Adaptive Max={adaptive_max:,.0f}")
+                    df['Google_Trends'] = (df['Curiosity_Raw'] / adaptive_max * 100).clip(0, 100)
+                    
                     return df[['Google_Trends']]
         except Exception as e:
             self.logger.error(f"Wikimedia API failure: {e}")
+            raise
             
         return pd.DataFrame()
 
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=5))
     def fetch_rss_sentiment(self):
         """Analyze latest news sentiment via RSS."""
         feeds = [
@@ -119,6 +126,7 @@ class IndustrialMarketAdapter:
         scores = [self.analyzer.polarity_scores(h)['compound'] for h in all_headlines]
         return sum(scores) / len(scores)
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def fetch_fng_sentiment(self):
         """Fetch historical Fear & Greed Index."""
         url = "https://api.alternative.me/fng/?limit=0&format=json"
@@ -134,9 +142,11 @@ class IndustrialMarketAdapter:
                 return df
         except Exception as e:
             self.logger.error(f"F&G Index failure: {e}")
+            raise
             
         return pd.DataFrame()
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
     def fetch_hourly_views(self, article="Bitcoin"):
         """Fetch 48hr high-resolution curiosity pulse."""
         end_date = datetime.now()
@@ -160,5 +170,7 @@ class IndustrialMarketAdapter:
                     return df[['Curiosity_Hourly']]
         except Exception as e:
             self.logger.error(f"Hourly views failure: {e}")
+            raise
             
         return pd.DataFrame()
+
