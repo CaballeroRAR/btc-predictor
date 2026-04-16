@@ -16,7 +16,7 @@ graph TD
         W[Wikipedia Views] --> AD[Industrial Market Adapter]
         T[Google Trends] --> AD
         S[Fear & Greed Index] --> AD
-        M[Live Market Ticker] --> AD
+        M[Live Market Tickers] --> AD
         R[RSS Sentiment] --> AD
     end
 
@@ -40,42 +40,57 @@ graph TD
 
 ### 2.2 Functional Tiers:
 - **Orchestration Layer (Cloud Run)**: A Streamlit-based terminal that handles user interaction and high-speed data stitching.
-- **Neural Compute (Vertex AI)**: Autonomous custom training jobs running on `n1-standard-4`. This tier is isolated from inference to ensure zero-latency for the HUD.
-- **Persistence Tier (Firestore)**: Manages the global state, tracking the "Neutral Bias" and "Drift Calibration" values across sessions.
-- **Storage Tier (GCS)**: Acts as the neural repository. It uses a **Recursive Discovery** logic to identify the latest training artifacts within the staging bucket.
+- **Neural Compute (Vertex AI)**: Autonomous custom training jobs running on optimized Docker containers. This tier is isolated from inference to ensure zero-latency.
+- **Persistence Tier (Firestore)**: Manages the global state, tracking the "Neural Bias" and "Adaptive G" values across sessions.
+- **Storage Tier (GCS)**: Acts as the neural repository using Recursive Discovery logic for model artifact staging.
 
 ---
 
 ## 3. The Neural Inference Cycle
-The project implements a proprietary "Pulse & Grounding" logic to ensure predictions are both mathematically accurate and visually continuous.
+The project implements a proprietary **"Pulse & Volatility-Weighted Grounding"** logic to ensure predictions are both mathematically accurate and reactive to market momentum.
 
-### 3.1 Pulse Injection & Grounding Flow
+### 3.1 Adaptive Grounding Flow
 ```mermaid
 sequenceDiagram
-    participant M as Market Ingestion
+    participant M as Market Ingest
     participant I as Pulse Injector
-    participant L as LSTM Model
-    participant G as Grounding Layer
+    participant L as LSTM-MC Model
+    participant G as Adaptive Grounding
     participant H as HUD
 
     M->>I: Raw History + $LivePrice
     I->>L: 60-Day Lookback + In-Progress Candle
-    L->>G: Neural Potential (Raw Prediction)
-    G->>G: Apply Inception Bias (Live vs Mean[0])
-    G->>H: Grounded Trajectory (Seamless Connection)
+    L->>G: Neural Potential (50 MC Samples)
+    G->>G: Calculate Variance (Model Uncertainty)
+    G->>G: Apply Sigmoid Decay (Momentum Handover)
+    G->>H: Grounded Trajectory (Momentum Favored)
 ```
 
-- **Pulse Injection**: Injects the current "unclosed" daily price into the LSTM's lookback window. This allows the neurons to react to intraday breakouts.
-- **Neural Grounding**: Anchors the forecast Mean exactly to the last known market price, while preserving the predicted trajectory shape (Predictive Freedom).
+- **Pulse Injection**: Injects the current "unclosed" daily price into position 59 of the 60-day LSTM lookback window.
+- **Sentiment Isolation**: Live RSS sentiment is isolated strictly to the inference row, preventing the forward-fill leakage that often plagues technical analysis models.
 - **MC Dropout**: Runs 50 iterations per forecast to generate the standard deviation bands (the "Confidence Tunnel").
 
 ---
 
 ## 4. Automation & MLOps
-The system maintains its own health through a series of automated handshakes:
 
-### 4.1 Artifact Recovery & Sync
-If local models or scalers are deleted or detected as stale, the **Lifecycle Facade** initiates a Cloud Handshake:
+### 4.1 Rapid Deployment Strategy (Multi-Stage)
+
+The system has shifted from a heavy, monolithic container strategy to a high-speed **Multi-Stage Build** architecture.
+
+| Feature | Legacy Approach (Single-Stage) | New Approach (Multi-Stage) |
+| :--- | :--- | :--- |
+| **Image Size** | ~1.8GB - 2.5GB | **< 600MB** |
+| **Build Time** | 8-12 minutes | **3-5 minutes** (due to cached layers) |
+| **Cold Starts** | High (High latency for Cloud Run) | **Minimal** (Fast container spin-up) |
+| **Security** | Contains build-tools (`gcc`, `make`) | **Lean Runtime Only** (No build-time binaries) |
+| **Registry Cost** | High (Large storage footprint) | **Low** (Optimized artifact size) |
+
+- **Stage 1 (Builder)**: A heavy `python-slim` environment that installs `build-essential`, compiles dependencies, and fetches Pip packages.
+- **Stage 2 (Runtime)**: A clean `python-slim` base that only inherits the finalized `site-packages`. This removes several hundred megabytes of temporary cache and compiler overhead, resulting in a production-ready image.
+
+### 4.2 Artifact Recovery & Sync
+The **Lifecycle Facade** manages the cloud handshake:
 1.  **Discovery**: Recursive scan of the `staging_bucket`.
 2.  **Verification**: Sorting blobs by `Updated` timestamp.
 3.  **Promotion**: Downloading the newest `.h5` and `.pkl` files to the local `models/` folder.
@@ -83,180 +98,69 @@ If local models or scalers are deleted or detected as stale, the **Lifecycle Fac
 ---
 
 ## 5. Database Architecture (Firestore: `btc-pred-db`)
-The system uses Google Cloud Firestore in native mode for high-availability state persistence.
 
-### 5.1 Data Topology (ER Diagram)
-```mermaid
-erDiagram
-    SNAPSHOTS ||--o{ DAILY_PREDICTIONS : "tracks"
-    SNAPSHOTS {
-        array_string dates
-        array_float prices
-        array_float std
-        array_float backtest_values
-        float avg_drift
-        timestamp timestamp
-    }
-    DAILY_PREDICTIONS {
-        string sim_run_date
-        string forecast_date
-        float predicted_price
-        float actual_price
-        timestamp updated_at
-    }
-    CALIBRATION_STATE {
-        float drift_value
-        float reference_price
-        string model_path
-        string last_calibration_date
-    }
-```
-
-The database is structured into three primary collections:
-
-### 5.1 Collection: `snapshots`
-**Purpose**: High-speed recovery and caching of the complete HUD state.
+### 5.1 Collection: `snapshots` (Persistence Logic)
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `dates` | Array[String] | ISO-8601 strings for the 30-day forecast timeline. |
-| `prices` | Array[Float] | Neural mean price projections for each date. |
-| `std` | Array[Float] | Confidence interval widths (Monte Carlo Sigma). |
-| `backtest_values` | Array[Float] | Historical model performance vector for the HUD. |
+| `dates` | Array[String] | ISO-8601 strings for the 30-day forecast. |
+| `prices` | Array[Float] | Neural mean price projections (grounded). |
+| `std` | Array[Float] | Confidence interval widths (MC Sigma). |
 | `avg_drift` | Float | The calculated Model-Market bias at time of inference. |
-| `timestamp` | Timestamp | Server-side creation time for cache invalidation. |
-
-### 5.2 Collection: `daily_predictions`
-**Purpose**: Longitudinal performance tracking and accuracy auditing.
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `sim_run_date` | String | YYYYMMDD identifier for the training/inference run. |
-| `forecast_date` | String | The specific calendar date being targeted. |
-| `predicted_price` | Float | The raw neural output for that specific date. |
-| `actual_price` | Float | The verified market close (updated via hourly sync). |
-| `updated_at` | Timestamp | Last update time for the truth-matching pass. |
-
-### 5.3 Collection: `calibration_state`
-**Purpose**: Neural persistence and model-market grounding tracking.
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `drift_value` | Float | The active sentiment-adjusted bias factor. |
-| `reference_price` | Float | The BTC price used as the grounding baseline. |
-| `model_path` | String | The GCS URI of the model asset used for the state. |
-| `last_calibration_date`| String | Human-readable timestamp of the last realignment. |
+| `timestamp` | Timestamp | Server-side creation time. |
 
 ---
 
-## 6. Real-Time Diagnostics
-Integrated into the `ForecastingFacade` is a **Neural Reactivity Monitor**. This tool provides real-time terminal logging of:
-- **Neural Bias**: The mathematical gap between the model's raw expectation and current market reality.
-- **7-Day Momentum**: The neural slope of the forecast trajectory.
-- **Scaling Invariants**: Verification that input features are within the expected Z-score distribution.
+## 6. Real-Time Diagnostics: Neural Reactivity Audit
+Integrated into the `ForecastingFacade` is a **Neural Reactivity Monitor**. Each fresh inference logs:
+- **Neural Bias**: Mathematical gap between raw neural expectation and market reality.
+- **Model Variance**: Real-time uncertainty detected via Monte Carlo Dropout.
+- **Adaptive G**: The dynamic grounding factor (0.1 to 0.5) that determines how much the model follows price vs its own trajectory.
 
 ---
 
 ## 7. Operational Commands
-- **Run Dashboard**: `streamlit run src/main_dashboard.py`
-- **Audit Reactivity**: Observe the terminal output during a "Force Refresh" for the Neural Reactivity Audit block.
-- **Sync Models**: Use the "Synchronize Model Assets" button in the sidebar to pull the latest staging-bucket artifacts.
-- **Force Data Refresh**: Pass `force_refresh=True` to `data_orchestrator.prepare_dataset()` or use the dashboard Force Market Refresh button to bypass the disk cache and re-ingest all four sources.
-- **Rebuild Project Map**: `python scripts/build_project_map.py` from the project root.
+- **Launch HUD Local**: `.\venv\Scripts\streamlit run src/main_dashboard.py`
+- **Hardened Deploy**: `.\scripts\deploy_all.ps1` (Loads secrets from `.env`)
+- **Sync Weights**: `python src/main_trainer.py` (Local retrain to align 12-feature schema)
 
 ---
 
 ## 8. Data Ingestion Pipeline
 
-### 8.1 Feature Schema (Macro Gravity - 12 Features)
+### 8.1 Macro Gravity Schema (Strict 12 Features)
+The system is built on a fixed-order tensor to ensure scaler-model integrity.
 
-The LSTM model is trained and inferred on a strict 12-feature tensor. Column order is fixed and must never be changed - the scaler artifact is bound to this exact sequence.
+| Index | Feature | Calculation / Refinement |
+| :--- | :--- | :--- |
+| 0-4 | `OHLCV` | Raw yfinance daily candles. |
+| 5 | `BTC_ETH_Ratio` | Cross-asset network value proxy. |
+| 6 | `BTC_Gold_Ratio` | Store-of-value saturation proxy. |
+| 7 | `DXY` | US Dollar Index (Macro). |
+| 8 | `US10Y` | 10-Year Treasury yield (Macro). |
+| 9 | `RSI` | 14-day Relative Strength Index. |
+| 10 | `Sentiment` | Daily Fear and Greed Index. |
+| 11 | `Google_Trends` | **Adaptive Scaling**: Wiki Views (Peak+20% Buffer) x RSS VADER. |
 
-| Index | Feature | Source | Category |
-| :--- | :--- | :--- | :--- |
-| 0 | `Open` | yfinance `BTC-USD` | Price |
-| 1 | `High` | yfinance `BTC-USD` | Price |
-| 2 | `Low` | yfinance `BTC-USD` | Price |
-| 3 | `Close` | yfinance `BTC-USD` | Target (model output) |
-| 4 | `Volume` | yfinance `BTC-USD` | Price |
-| 5 | `BTC_ETH_Ratio` | BTC Close / ETH Close | Cross-Asset |
-| 6 | `BTC_Gold_Ratio` | BTC Close / Gold Close | Cross-Asset |
-| 7 | `DXY` | yfinance `DX-Y.NYB` | Macro |
-| 8 | `US10Y` | yfinance `^TNX` | Macro |
-| 9 | `RSI` | 14-day rolling BTC Close | Technical |
-| 10 | `Sentiment` | alternative.me Fear and Greed API | Sentiment |
-| 11 | `Google_Trends` | Wikimedia pageviews x RSS VADER score | Curiosity |
-
-### 8.2 Data Sources
-
-**Price and Macro (yfinance)**: Five assets are downloaded simultaneously: BTC-USD (primary), ETH-USD, GC=F (Gold), DX-Y.NYB (DXY), and ^TNX (US10Y). Macro assets trade only on weekdays; weekend gaps are filled via forward-fill aligned to BTC's 24/7 index. RSI is computed as a 14-day rolling average of the daily Close differential within the adapter.
-
-**Fear and Greed Index (alternative.me)**: Historical daily sentiment covering approximately the last 5.5 years. Output is an integer 0-100. Left-joined to the price index and forward-filled for any missing days. Training runs with `YEARS_HISTORY = 6` will have the first ~6 months carry the earliest available F&G value via forward-fill.
-
-**Wikipedia Pageviews (Wikimedia REST API)**: Daily Bitcoin article pageviews used as a proxy for retail market attention. Responses are min-max normalized to 0-100. No API key is required. Stateless and stable.
-
-**RSS Sentiment Multiplier (VADER)**: Current headlines from CoinTelegraph and CoinDesk RSS feeds are scored via VADER. The compound score (approximately -1.0 to +1.0) is applied as a multiplier to the Wikipedia views signal:
-```
-Google_Trends = wikipedia_views_normalized * (1 + rss_compound_score)
-Google_Trends = clip(Google_Trends, 0, 100)
-```
-
-### 8.3 Ingestion Sequence (DataOrchestrator)
-
-```
-1. fetch_price_data()        -> yfinance multi-asset pull, RSI derived internally
-2. fetch_fng_sentiment()     -> alternative.me API, 0-100 integer daily
-3. fetch_wikipedia_views()   -> Wikimedia daily pageviews, normalized 0-100
-4. fetch_rss_sentiment()     -> CoinTelegraph + CoinDesk VADER compound score
-5. Curiosity Multiplier      -> Google_Trends = wiki * (1 + rss).clip(0, 100)
-6. _stitch_yesterday_gap()   -> gap recovery if yfinance misses yesterday close
-7. _apply_temporal_guard()   -> drops incomplete today candle if hour < 10
-8. enforce_schema()          -> hard 12-feature validation, raises on mismatch
-9. Cache -> data/merged_data.csv
-```
-
-### 8.4 Disk Cache
-
-If `data/merged_data.csv` exists and contains exactly 12 columns, all four API calls are bypassed on subsequent loads. The cache is invalidated by `force_refresh=True` or a column count mismatch only.
+### 8.2 Ingestion Refinements
+- **Adaptive Peak Scaling (F-01)**: Replaced static normalization with dynamic peak-tracking for Wikipedia views (Historical Peak * 1.2 buffer). This prevents feature saturation during curiosity spikes.
+- **Stitch Yesterday Gap (P-03)**: Implements timezone-aware gap recovery to ensure yesterday's candle is present before today's pulse is injected.
+- **Temporal Guard**: Enforced 10:00 UTC guard to prevent model ingestion of unstable intraday noise during high-volatility opens.
 
 ---
 
 ## 9. Model Inference Mechanism
 
-### 9.1 Intraday Pulse Injection
-
-Before inference, if the most recent historical row is not from today, the system appends a synthesized live candle:
-- `Open = yesterday Close`, `High/Low/Close = current live BTC price`
-- `Sentiment = yesterday Sentiment + drift_offset` (clipped 0-100)
-- `Google_Trends = yesterday Google_Trends + drift_offset / 2` (clipped 0-100)
-
-This row occupies position 59 (final) of the 60-day LSTM lookback window.
-
-### 9.2 Monte Carlo Dropout Inference
-
-The model is called with `training=True` to keep dropout layers active, generating stochastic variation across 50 independent passes. Each pass produces a 30-day price vector. The final output is the mean and standard deviation across all 50 samples. The confidence bands displayed in the HUD apply an additional `std * 0.5` tightening factor.
-
-### 9.3 Inception Grounding
-
-Raw neural output is anchored to the live market price to eliminate drift from the scaler mean:
+### 9.1 Volatility-Weighted Grounding (F-03)
+Raw neural output is anchored to the live market price using a dynamic **Grounding Factor (G)**:
+```python
+expected_variance = (MC_STD[0] / Mean[0]) * 100
+if expected_variance > 2.5%:
+    adaptive_g = BASE_G * exp(-(diff) / 5.0)  # Decay G to favor Neural Model
 ```
-shift = (live_price * 0.5 + mean[0] * 0.5) - mean[0]
-decay = linspace(1.0, 0.0, 30)
-mean  = mean + shift * decay
-```
-Day 0 blends 50% live price and 50% neural. By day 30, the full shift has decayed to zero and the output is pure neural trajectory. The grounding factor is configurable via the `FORECAST_GROUNDING_FACTOR` environment variable.
+During periods of high uncertainty (high variance), the system automatically grants the Neural Model more autonomy, allowing the trajectory to diverge from current price if the neurons detect a strong directional breakout.
 
-### 9.4 Neural Reactivity Audit
-
-Each fresh inference logs the following diagnostic block to the terminal:
-```
-========================================
---- NEURAL REACTIVITY AUDIT ---
-Target Period:  YYYY-MM-DD
-Live Price:     $XX,XXX.XX
-Raw Model Obs:  $XX,XXX.XX
-Neural Bias:    $+/-X,XXX.XX (+/-X.XX%)
-Shape Freedom:  7-Day Momentum = +/-X.XX%
-========================================
-```
-A large Neural Bias indicates the model's internal expectation has drifted significantly from current market reality and may warrant recalibration.
+### 9.2 Sigmoid Handover
+Grounding decay uses a sigmoid-like curve (`1 / (1 + exp(x - 5))`) rather than linear decay. This preserves the "Neural Momentum" early in the forecast while ensuring a smooth transition between anchored and autonomous states.
 
 ---
-*STABLE VERSION: 2026.04.15 - Pipeline Audit and Documentation Update*
+*STABLE VERSION: 2026.04.16 - Hardening Phase Complete (Refinements F-01 to F-03 & P-03)*
