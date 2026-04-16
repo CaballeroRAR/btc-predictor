@@ -65,6 +65,7 @@ gcloud run deploy btc-dashboard `
     --region $REGION `
     --project $PROJECT_ID `
     --memory 2Gi `
+    --service-account $SA_EMAIL `
     --set-env-vars $ENV_VARS `
     --allow-unauthenticated
 

@@ -99,14 +99,35 @@ The **Lifecycle Facade** manages the cloud handshake:
 
 ## 5. Database Architecture (Firestore: `btc-pred-db`)
 
-### 5.1 Collection: `snapshots` (Persistence Logic)
+### 5.1 Collection: `snapshots` (HUD State)
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `dates` | Array[String] | ISO-8601 strings for the 30-day forecast. |
+| `dates` | Array[String] | ISO-8601 forecast timeline. |
 | `prices` | Array[Float] | Neural mean price projections (grounded). |
 | `std` | Array[Float] | Confidence interval widths (MC Sigma). |
-| `avg_drift` | Float | The calculated Model-Market bias at time of inference. |
+| `avg_drift` | Float | Calculated Model-Market bias. |
 | `timestamp` | Timestamp | Server-side creation time. |
+
+### 5.2 Collection: `daily_predictions` (Audit Log)
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `sim_run_date` | String | YYYYMMDD identifier for the run. |
+| `forecast_date` | String | Target calendar date. |
+| `predicted_price` | Float | Raw neural output for that date. |
+| `actual_price` | Float | Verified market close. |
+
+### 5.3 Collection: `calibration_state` (Grounding Memory)
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `drift_value` | Float | Active sentiment-adjusted bias factor. |
+| `reference_price` | Float | Price used as grounding baseline. |
+| `last_calibration_date`| String | Timestamp of last realignment. |
+
+### 5.4 Industrial Resilience Layer (Local Fallback)
+The system implements a **Dual-Write Resilience Layer**. 
+- **Cloud Path**: Primary write attempt to Firestore `btc-pred-db`.
+- **Local Path**: If the cloud write fails (e.g., due to 403 Forbidden or network loss), the system automatically serializes the payload to [**`data/resilience/`**](file:///d:/btc-prediction/data/resilience/).
+- **Observation**: JSON files in the local resilience directory indicate that the data was **NOT** successfully sent to Firebase. This is expected in local development environments where service account keys are restricted.
 
 ---
 
